@@ -1,4 +1,5 @@
 import * as core from "@actions/core";
+import { getReportDates } from "./utils/getReportDates";
 
 export type CursorDailyUsage = {
   date: number;
@@ -29,8 +30,24 @@ export const getCursorUsageData = async (): Promise<CursorDailyUsage[]> => {
     return [];
   }
 
-  const endDate = Date.now();
-  const startDate = endDate - 7 * 24 * 60 * 60 * 1000; // last 7 days
+  const { startDate: startDt, endDate: endDt } = getReportDates();
+
+  let startDate = startDt ? startDt.getTime() : undefined;
+  let endDate = endDt ? endDt.getTime() : undefined;
+
+  if (!startDate && !endDate) {
+    // No explicit period – default to last 7 days
+    endDate = Date.now();
+    startDate = endDate - 7 * 24 * 60 * 60 * 1000;
+  } else {
+    // If only start provided, set end to now; if only end provided, compute 7-day window before it
+    if (startDate && !endDate) {
+      endDate = Date.now();
+    }
+    if (!startDate && endDate) {
+      startDate = endDate - 7 * 24 * 60 * 60 * 1000;
+    }
+  }
 
   const body = {
     startDate,

@@ -1086,6 +1086,113 @@ Object.defineProperty(exports, "prepareActionsTime", ({ enumerable: true, get: f
 
 /***/ }),
 
+/***/ 84085:
+/***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
+
+"use strict";
+
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || function (mod) {
+    if (mod && mod.__esModule) return mod;
+    var result = {};
+    if (mod != null) for (var k in mod) if (k !== "default" && Object.prototype.hasOwnProperty.call(mod, k)) __createBinding(result, mod, k);
+    __setModuleDefault(result, mod);
+    return result;
+};
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.integrateCursorMetrics = void 0;
+const octokit_1 = __nccwpck_require__(75455);
+const core = __importStar(__nccwpck_require__(42186));
+const requests_1 = __nccwpck_require__(49591);
+const integrateCursorMetrics = async (data, repos) => {
+    // skip if feature not enabled
+    const includeCursor = core.getInput("INCLUDE_CURSOR_ANALYTICS");
+    if (includeCursor !== "true")
+        return;
+    const cursorRecords = await (0, requests_1.getCursorUsageData)();
+    if (!cursorRecords || cursorRecords.length === 0)
+        return;
+    // aggregate per email for the whole period
+    const emailAggregates = {};
+    cursorRecords.forEach((rec) => {
+        const email = rec.email;
+        if (!email)
+            return;
+        if (!emailAggregates[email]) {
+            emailAggregates[email] = {
+                totalLinesAdded: 0,
+                totalLinesDeleted: 0,
+                acceptedLinesAdded: 0,
+                acceptedLinesDeleted: 0,
+            };
+        }
+        emailAggregates[email].totalLinesAdded += rec.totalLinesAdded || 0;
+        emailAggregates[email].totalLinesDeleted += rec.totalLinesDeleted || 0;
+        emailAggregates[email].acceptedLinesAdded += rec.acceptedLinesAdded || 0;
+        emailAggregates[email].acceptedLinesDeleted += rec.acceptedLinesDeleted || 0;
+    });
+    const logins = Object.keys(data).filter((login) => login !== "total");
+    const loginEmailMap = {};
+    for (const login of logins) {
+        // attempt to find email if not already mapped
+        for (const repo of repos) {
+            try {
+                const commits = await octokit_1.octokit.rest.repos.listCommits({
+                    owner: repo.owner,
+                    repo: repo.repo,
+                    author: login,
+                    per_page: 1,
+                });
+                if (commits.data && commits.data.length > 0) {
+                    const email = commits.data[0].commit.author?.email;
+                    if (email) {
+                        loginEmailMap[login] = email;
+                        break;
+                    }
+                }
+            }
+            catch (error) {
+                // ignore and continue to next repo
+            }
+        }
+    }
+    // merge metrics into collection under the "total" date key
+    for (const [login, email] of Object.entries(loginEmailMap)) {
+        const aggregate = emailAggregates[email];
+        if (!aggregate)
+            continue;
+        if (!data[login]) {
+            data[login] = { total: {} };
+        }
+        if (!data[login].total) {
+            data[login].total = {};
+        }
+        data[login].total.cursorTotalLinesAdded = aggregate.totalLinesAdded;
+        data[login].total.cursorTotalLinesDeleted = aggregate.totalLinesDeleted;
+        data[login].total.cursorAcceptedLinesAdded = aggregate.acceptedLinesAdded;
+        data[login].total.cursorAcceptedLinesDeleted = aggregate.acceptedLinesDeleted;
+    }
+};
+exports.integrateCursorMetrics = integrateCursorMetrics;
+
+
+/***/ }),
+
 /***/ 45503:
 /***/ ((__unused_webpack_module, exports, __nccwpck_require__) => {
 
@@ -2080,6 +2187,95 @@ exports.delay = delay;
 
 /***/ }),
 
+/***/ 8999:
+/***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
+
+"use strict";
+
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || function (mod) {
+    if (mod && mod.__esModule) return mod;
+    var result = {};
+    if (mod != null) for (var k in mod) if (k !== "default" && Object.prototype.hasOwnProperty.call(mod, k)) __createBinding(result, mod, k);
+    __setModuleDefault(result, mod);
+    return result;
+};
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.getCursorUsageData = void 0;
+const core = __importStar(__nccwpck_require__(42186));
+const getReportDates_1 = __nccwpck_require__(30183);
+/**
+ * Fetches aggregated Cursor usage metrics for the last 7 days.
+ * If the `CURSOR_API_KEY` input is missing the promise resolves to an empty array.
+ */
+const getCursorUsageData = async () => {
+    const apiKey = core.getInput("CURSOR_API_KEY");
+    if (!apiKey) {
+        core.info("No CURSOR_API_KEY provided – skipping Cursor analytics fetch.");
+        return [];
+    }
+    const { startDate: startDt, endDate: endDt } = (0, getReportDates_1.getReportDates)();
+    let startDate = startDt ? startDt.getTime() : undefined;
+    let endDate = endDt ? endDt.getTime() : undefined;
+    if (!startDate && !endDate) {
+        // No explicit period – default to last 7 days
+        endDate = Date.now();
+        startDate = endDate - 7 * 24 * 60 * 60 * 1000;
+    }
+    else {
+        // If only start provided, set end to now; if only end provided, compute 7-day window before it
+        if (startDate && !endDate) {
+            endDate = Date.now();
+        }
+        if (!startDate && endDate) {
+            startDate = endDate - 7 * 24 * 60 * 60 * 1000;
+        }
+    }
+    const body = {
+        startDate,
+        endDate,
+    };
+    const authHeader = Buffer.from(`${apiKey}:`).toString("base64");
+    try {
+        const response = await fetch("https://api.cursor.com/teams/daily-usage-data", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                Authorization: `Basic ${authHeader}`,
+            },
+            body: JSON.stringify(body),
+        });
+        if (!response.ok) {
+            throw new Error(`Cursor API responded with status ${response.status}`);
+        }
+        const json = (await response.json());
+        return json.data || [];
+    }
+    catch (error) {
+        core.warning(`Failed to fetch Cursor analytics data: ${error}`);
+        return [];
+    }
+};
+exports.getCursorUsageData = getCursorUsageData;
+
+
+/***/ }),
+
 /***/ 17227:
 /***/ ((__unused_webpack_module, exports, __nccwpck_require__) => {
 
@@ -2383,7 +2579,7 @@ exports.getTeams = getTeams;
 "use strict";
 
 Object.defineProperty(exports, "__esModule", ({ value: true }));
-exports.createIssue = exports.makeComplexRequest = exports.getOrganizationsRepositories = exports.getOwnersRepositories = exports.clearComments = exports.createComment = exports.getTeams = void 0;
+exports.getCursorUsageData = exports.createIssue = exports.makeComplexRequest = exports.getOrganizationsRepositories = exports.getOwnersRepositories = exports.clearComments = exports.createComment = exports.getTeams = void 0;
 var getTeams_1 = __nccwpck_require__(15034);
 Object.defineProperty(exports, "getTeams", ({ enumerable: true, get: function () { return getTeams_1.getTeams; } }));
 var createComment_1 = __nccwpck_require__(82634);
@@ -2398,6 +2594,8 @@ var makeComplexRequest_1 = __nccwpck_require__(99378);
 Object.defineProperty(exports, "makeComplexRequest", ({ enumerable: true, get: function () { return makeComplexRequest_1.makeComplexRequest; } }));
 var createIssue_1 = __nccwpck_require__(5891);
 Object.defineProperty(exports, "createIssue", ({ enumerable: true, get: function () { return createIssue_1.createIssue; } }));
+var getCursorUsageData_1 = __nccwpck_require__(8999);
+Object.defineProperty(exports, "getCursorUsageData", ({ enumerable: true, get: function () { return getCursorUsageData_1.getCursorUsageData; } }));
 
 
 /***/ }),
@@ -2764,7 +2962,7 @@ Object.defineProperty(exports, "createList", ({ enumerable: true, get: function 
 "use strict";
 
 Object.defineProperty(exports, "__esModule", ({ value: true }));
-exports.timeFromRepeatedRequestToResponseHeader = exports.timeFromOpenToResponseHeader = exports.timeFromRequestToResponseHeader = exports.prSizesHeader = exports.requestChangesReceived = exports.reviewTypesHeader = exports.commentsReceivedHeader = exports.commentsConductedHeader = exports.discussionsConductedHeader = exports.discussionsHeader = exports.reviewRequestConductedHeader = exports.reviewConductedHeader = exports.unapprovedPrsHeader = exports.unreviewedPrsHeader = exports.additionsDeletionsHeader = exports.totalRevertedPrsHeader = exports.totalOpenedPrsHeader = exports.totalMergedPrsHeader = exports.timeToMergeHeader = exports.timeAwaitingRepeatedReviewHeader = exports.timeToApproveHeader = exports.timeToReviewHeader = exports.timeInDraftHeader = exports.timeToReviewRequestHeader = void 0;
+exports.timeFromRepeatedRequestToResponseHeader = exports.timeFromOpenToResponseHeader = exports.timeFromRequestToResponseHeader = exports.prSizesHeader = exports.requestChangesReceived = exports.reviewTypesHeader = exports.commentsReceivedHeader = exports.commentsConductedHeader = exports.discussionsConductedHeader = exports.discussionsHeader = exports.reviewRequestConductedHeader = exports.reviewConductedHeader = exports.cursorAcceptedLinesDeletedHeader = exports.cursorAcceptedLinesAddedHeader = exports.cursorLinesDeletedHeader = exports.cursorLinesAddedHeader = exports.unapprovedPrsHeader = exports.unreviewedPrsHeader = exports.additionsDeletionsHeader = exports.totalRevertedPrsHeader = exports.totalOpenedPrsHeader = exports.totalMergedPrsHeader = exports.timeToMergeHeader = exports.timeAwaitingRepeatedReviewHeader = exports.timeToApproveHeader = exports.timeToReviewHeader = exports.timeInDraftHeader = exports.timeToReviewRequestHeader = void 0;
 exports.timeToReviewRequestHeader = "Time to review request";
 exports.timeInDraftHeader = "Time in draft";
 exports.timeToReviewHeader = "Time to review";
@@ -2777,6 +2975,10 @@ exports.totalRevertedPrsHeader = "Total reverted PRs";
 exports.additionsDeletionsHeader = "Additions / Deletions";
 exports.unreviewedPrsHeader = "PRs w/o review";
 exports.unapprovedPrsHeader = "PRs w/o approval";
+exports.cursorLinesAddedHeader = "Cursor lines added";
+exports.cursorLinesDeletedHeader = "Cursor lines deleted";
+exports.cursorAcceptedLinesAddedHeader = "Cursor accepted lines added";
+exports.cursorAcceptedLinesDeletedHeader = "Cursor accepted lines deleted";
 exports.reviewConductedHeader = "Reviews conducted";
 exports.reviewRequestConductedHeader = "Review requests conducted";
 exports.discussionsHeader = "Agreed / Disagreed / Total discussions received";
@@ -3719,6 +3921,10 @@ const createTotalTable = (data, users, date) => {
             data[user]?.[date]?.unreviewed?.toString() || "0",
             data[user]?.[date]?.unapproved?.toString() || "0",
             `+${data[user]?.[date].additions || 0}/-${data[user]?.[date].deletions || 0}`,
+            (data[user]?.[date]?.cursorTotalLinesAdded || 0).toString(),
+            (data[user]?.[date]?.cursorTotalLinesDeleted || 0).toString(),
+            (data[user]?.[date]?.cursorAcceptedLinesAdded || 0).toString(),
+            (data[user]?.[date]?.cursorAcceptedLinesDeleted || 0).toString(),
             `${sizes
                 .map((size) => data[user]?.[date]?.prSizes?.filter((prSize) => prSize === size)
                 .length || 0)
@@ -3746,6 +3952,10 @@ const createTotalTable = (data, users, date) => {
                     constants_1.unreviewedPrsHeader,
                     constants_1.unapprovedPrsHeader,
                     constants_1.additionsDeletionsHeader,
+                    constants_1.cursorLinesAddedHeader,
+                    constants_1.cursorLinesDeletedHeader,
+                    constants_1.cursorAcceptedLinesAddedHeader,
+                    constants_1.cursorAcceptedLinesDeletedHeader,
                     constants_1.prSizesHeader,
                 ],
                 rows: tableRowsTotal,
@@ -92729,6 +92939,7 @@ __nccwpck_require__(44227);
 const createOutput_1 = __nccwpck_require__(63119);
 const requests_1 = __nccwpck_require__(49591);
 const converters_1 = __nccwpck_require__(86200);
+const integrateCursorMetrics_1 = __nccwpck_require__(84085);
 const utils_1 = __nccwpck_require__(41002);
 const getRateLimit_1 = __nccwpck_require__(78028);
 const analytics_1 = __nccwpck_require__(88345);
@@ -92776,6 +92987,8 @@ async function main() {
             comments: [],
         });
         const preparedData = (0, converters_1.collectData)(mergedData, teams);
+        // If requested, augment with Cursor analytics metrics
+        await (0, integrateCursorMetrics_1.integrateCursorMetrics)(preparedData, repos.map((r) => ({ owner: r[0], repo: r[1] })));
         console.log("Calculation complete. Generating markdown.");
         await (0, createOutput_1.createOutput)(preparedData);
         try {

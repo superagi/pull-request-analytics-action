@@ -20,3 +20,5 @@ jobs:
           TIMEZONE: "Europe/Berlin"
           PERIOD_SPLIT_UNIT: none
           AMOUNT: 200
+          CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY }}
+          INCLUDE_CURSOR_ANALYTICS: true
