@@ -1127,24 +1127,25 @@ const integrateCursorMetrics = async (data, repos) => {
     const cursorRecords = await (0, requests_1.getCursorUsageData)();
     if (!cursorRecords || cursorRecords.length === 0)
         return;
-    // aggregate per email for the whole period
+    // aggregate per email *local part* (before "@") so different domains for the same user are combined
     const emailAggregates = {};
     cursorRecords.forEach((rec) => {
         const email = rec.email;
         if (!email)
             return;
-        if (!emailAggregates[email]) {
-            emailAggregates[email] = {
+        const local = email.split("@")[0].toLowerCase();
+        if (!emailAggregates[local]) {
+            emailAggregates[local] = {
                 totalLinesAdded: 0,
                 totalLinesDeleted: 0,
                 acceptedLinesAdded: 0,
                 acceptedLinesDeleted: 0,
             };
         }
-        emailAggregates[email].totalLinesAdded += rec.totalLinesAdded || 0;
-        emailAggregates[email].totalLinesDeleted += rec.totalLinesDeleted || 0;
-        emailAggregates[email].acceptedLinesAdded += rec.acceptedLinesAdded || 0;
-        emailAggregates[email].acceptedLinesDeleted += rec.acceptedLinesDeleted || 0;
+        emailAggregates[local].totalLinesAdded += rec.totalLinesAdded || 0;
+        emailAggregates[local].totalLinesDeleted += rec.totalLinesDeleted || 0;
+        emailAggregates[local].acceptedLinesAdded += rec.acceptedLinesAdded || 0;
+        emailAggregates[local].acceptedLinesDeleted += rec.acceptedLinesDeleted || 0;
     });
     const logins = Object.keys(data).filter((login) => login !== "total");
     const loginEmailMap = {};
@@ -1173,7 +1174,8 @@ const integrateCursorMetrics = async (data, repos) => {
     }
     // merge metrics into collection under the "total" date key
     for (const [login, email] of Object.entries(loginEmailMap)) {
-        const aggregate = emailAggregates[email];
+        const local = email.split("@")[0].toLowerCase();
+        const aggregate = emailAggregates[local];
         if (!aggregate)
             continue;
         if (!data[login]) {
