@@ -1187,6 +1187,30 @@ const integrateCursorMetrics = async (data, repos) => {
         data[login].total.cursorAcceptedLinesAdded = aggregate.acceptedLinesAdded;
         data[login].total.cursorAcceptedLinesDeleted = aggregate.acceptedLinesDeleted;
     }
+    // compute overall totals
+    let totalLinesAdded = 0;
+    let totalLinesDeleted = 0;
+    let totalAcceptedLinesAdded = 0;
+    let totalAcceptedLinesDeleted = 0;
+    for (const login of Object.keys(loginEmailMap)) {
+        const col = data[login]?.total;
+        if (!col)
+            continue;
+        totalLinesAdded += col.cursorTotalLinesAdded || 0;
+        totalLinesDeleted += col.cursorTotalLinesDeleted || 0;
+        totalAcceptedLinesAdded += col.cursorAcceptedLinesAdded || 0;
+        totalAcceptedLinesDeleted += col.cursorAcceptedLinesDeleted || 0;
+    }
+    if (!data.total) {
+        data.total = {};
+    }
+    if (!data.total.total) {
+        data.total.total = {};
+    }
+    data.total.total.cursorTotalLinesAdded = totalLinesAdded;
+    data.total.total.cursorTotalLinesDeleted = totalLinesDeleted;
+    data.total.total.cursorAcceptedLinesAdded = totalAcceptedLinesAdded;
+    data.total.total.cursorAcceptedLinesDeleted = totalAcceptedLinesDeleted;
 };
 exports.integrateCursorMetrics = integrateCursorMetrics;
 
@@ -2962,7 +2986,7 @@ Object.defineProperty(exports, "createList", ({ enumerable: true, get: function 
 "use strict";
 
 Object.defineProperty(exports, "__esModule", ({ value: true }));
-exports.timeFromRepeatedRequestToResponseHeader = exports.timeFromOpenToResponseHeader = exports.timeFromRequestToResponseHeader = exports.prSizesHeader = exports.requestChangesReceived = exports.reviewTypesHeader = exports.commentsReceivedHeader = exports.commentsConductedHeader = exports.discussionsConductedHeader = exports.discussionsHeader = exports.reviewRequestConductedHeader = exports.reviewConductedHeader = exports.cursorAcceptedLinesDeletedHeader = exports.cursorAcceptedLinesAddedHeader = exports.cursorLinesDeletedHeader = exports.cursorLinesAddedHeader = exports.unapprovedPrsHeader = exports.unreviewedPrsHeader = exports.additionsDeletionsHeader = exports.totalRevertedPrsHeader = exports.totalOpenedPrsHeader = exports.totalMergedPrsHeader = exports.timeToMergeHeader = exports.timeAwaitingRepeatedReviewHeader = exports.timeToApproveHeader = exports.timeToReviewHeader = exports.timeInDraftHeader = exports.timeToReviewRequestHeader = void 0;
+exports.timeFromRepeatedRequestToResponseHeader = exports.timeFromOpenToResponseHeader = exports.timeFromRequestToResponseHeader = exports.prSizesHeader = exports.requestChangesReceived = exports.reviewTypesHeader = exports.commentsReceivedHeader = exports.commentsConductedHeader = exports.discussionsConductedHeader = exports.discussionsHeader = exports.reviewRequestConductedHeader = exports.reviewConductedHeader = exports.cursorAcceptedLinesHeader = exports.cursorLinesHeader = exports.unapprovedPrsHeader = exports.unreviewedPrsHeader = exports.additionsDeletionsHeader = exports.totalRevertedPrsHeader = exports.totalOpenedPrsHeader = exports.totalMergedPrsHeader = exports.timeToMergeHeader = exports.timeAwaitingRepeatedReviewHeader = exports.timeToApproveHeader = exports.timeToReviewHeader = exports.timeInDraftHeader = exports.timeToReviewRequestHeader = void 0;
 exports.timeToReviewRequestHeader = "Time to review request";
 exports.timeInDraftHeader = "Time in draft";
 exports.timeToReviewHeader = "Time to review";
@@ -2975,10 +2999,8 @@ exports.totalRevertedPrsHeader = "Total reverted PRs";
 exports.additionsDeletionsHeader = "Additions / Deletions";
 exports.unreviewedPrsHeader = "PRs w/o review";
 exports.unapprovedPrsHeader = "PRs w/o approval";
-exports.cursorLinesAddedHeader = "Cursor lines added";
-exports.cursorLinesDeletedHeader = "Cursor lines deleted";
-exports.cursorAcceptedLinesAddedHeader = "Cursor accepted lines added";
-exports.cursorAcceptedLinesDeletedHeader = "Cursor accepted lines deleted";
+exports.cursorLinesHeader = "Cursor lines added / deleted";
+exports.cursorAcceptedLinesHeader = "Cursor accepted lines accepted / deleted";
 exports.reviewConductedHeader = "Reviews conducted";
 exports.reviewRequestConductedHeader = "Review requests conducted";
 exports.discussionsHeader = "Agreed / Disagreed / Total discussions received";
@@ -3921,10 +3943,8 @@ const createTotalTable = (data, users, date) => {
             data[user]?.[date]?.unreviewed?.toString() || "0",
             data[user]?.[date]?.unapproved?.toString() || "0",
             `+${data[user]?.[date].additions || 0}/-${data[user]?.[date].deletions || 0}`,
-            (data[user]?.[date]?.cursorTotalLinesAdded || 0).toString(),
-            (data[user]?.[date]?.cursorTotalLinesDeleted || 0).toString(),
-            (data[user]?.[date]?.cursorAcceptedLinesAdded || 0).toString(),
-            (data[user]?.[date]?.cursorAcceptedLinesDeleted || 0).toString(),
+            `+${data[user]?.[date]?.cursorTotalLinesAdded || 0}/-${data[user]?.[date]?.cursorTotalLinesDeleted || 0}`,
+            `+${data[user]?.[date]?.cursorAcceptedLinesAdded || 0}/-${data[user]?.[date]?.cursorAcceptedLinesDeleted || 0}`,
             `${sizes
                 .map((size) => data[user]?.[date]?.prSizes?.filter((prSize) => prSize === size)
                 .length || 0)
@@ -3952,10 +3972,8 @@ const createTotalTable = (data, users, date) => {
                     constants_1.unreviewedPrsHeader,
                     constants_1.unapprovedPrsHeader,
                     constants_1.additionsDeletionsHeader,
-                    constants_1.cursorLinesAddedHeader,
-                    constants_1.cursorLinesDeletedHeader,
-                    constants_1.cursorAcceptedLinesAddedHeader,
-                    constants_1.cursorAcceptedLinesDeletedHeader,
+                    constants_1.cursorLinesHeader,
+                    constants_1.cursorAcceptedLinesHeader,
                     constants_1.prSizesHeader,
                 ],
                 rows: tableRowsTotal,

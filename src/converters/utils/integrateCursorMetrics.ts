@@ -86,4 +86,31 @@ export const integrateCursorMetrics = async (
     data[login].total.cursorAcceptedLinesAdded = aggregate.acceptedLinesAdded;
     data[login].total.cursorAcceptedLinesDeleted = aggregate.acceptedLinesDeleted;
   }
+
+  // compute overall totals
+  let totalLinesAdded = 0;
+  let totalLinesDeleted = 0;
+  let totalAcceptedLinesAdded = 0;
+  let totalAcceptedLinesDeleted = 0;
+
+  for (const login of Object.keys(loginEmailMap)) {
+    const col = data[login]?.total;
+    if (!col) continue;
+    totalLinesAdded += col.cursorTotalLinesAdded || 0;
+    totalLinesDeleted += col.cursorTotalLinesDeleted || 0;
+    totalAcceptedLinesAdded += col.cursorAcceptedLinesAdded || 0;
+    totalAcceptedLinesDeleted += col.cursorAcceptedLinesDeleted || 0;
+  }
+
+  if (!data.total) {
+    data.total = {} as any;
+  }
+  if (!data.total.total) {
+    data.total.total = {} as any;
+  }
+
+  data.total.total.cursorTotalLinesAdded = totalLinesAdded;
+  data.total.total.cursorTotalLinesDeleted = totalLinesDeleted;
+  data.total.total.cursorAcceptedLinesAdded = totalAcceptedLinesAdded;
+  data.total.total.cursorAcceptedLinesDeleted = totalAcceptedLinesDeleted;
 }; 
