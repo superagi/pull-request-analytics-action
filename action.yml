@@ -1,0 +1,139 @@
+name: "Pull Request Analytics"
+author: "Aleksei Simatov"
+description: "Provides informative reports on team and developer metrics, based on data from pull requests and code reviews"
+branding:
+  icon: "trending-up"
+  color: "orange"
+inputs:
+  GITHUB_TOKEN:
+    description: "Github token"
+    required: true
+  GITHUB_REPO_FOR_ISSUE:
+    description: "Github repo for issue"
+    required: false
+  GITHUB_OWNER_FOR_ISSUE:
+    description: "Github owner for issue"
+    required: false
+  GITHUB_OWNERS_REPOS:
+    description: "Github owner/repository list separated by comma"
+    required: false
+  ORGANIZATIONS:
+    description: "Github organizations separated by comma"
+    required: false
+  SHOW_STATS_TYPES:
+    description: "Stats types that should be displayed in report. Values must be separated by comma. Can take values: 'timeline', 'workload', 'pr-quality', 'code-review-engagement', 'response-time'"
+    required: false
+    default: "timeline, workload, pr-quality, code-review-engagement, response-time"
+  AMOUNT:
+    description: "Amount of PRs"
+    required: false
+    default: "100"
+  REPORT_DATE_START:
+    description: "Start date for report(d/MM/yyyy)"
+    required: false
+  REPORT_DATE_END:
+    description: "End date for report(d/MM/yyyy)"
+    required: false
+  REPORT_PERIOD:
+    description: "Report period from now. Values format [unit]:value separated by commas. Supported units: 'years', 'months', 'weeks', 'days', 'hours', 'minutes', 'seconds'. Example: 'weeks:2'"
+    required: false
+  CORE_HOURS_START:
+    description: "Start time of core hours(HH:mm)"
+    required: false
+  CORE_HOURS_END:
+    description: "End time of core hours(HH:mm)"
+    required: false
+  WEEKENDS:
+    description: "Specifies the days of the week considered as weekends. Values are represented as numbers, where 0 corresponds to Sunday"
+    required: false
+    default: "0,6"
+  HOLIDAYS:
+    description: "Holidays separated by comma(d/MM/yyyy)"
+    required: false
+  PERCENTILE:
+    description: "Percentile value for timeline"
+    required: false
+    default: "75"
+  TOP_LIST_AMOUNT:
+    description: "Amount of items in lists"
+    required: false
+    default: "5"
+  REVIEW_TIME_INTERVALS:
+    description: "Intervals for determining review times distribution"
+    required: false
+  APPROVAL_TIME_INTERVALS:
+    description: "Intervals for determining approval times distribution"
+    required: false
+  MERGE_TIME_INTERVALS:
+    description: "Intervals for determining merge times distribution"
+    required: false
+  PERIOD_SPLIT_UNIT:
+    description: "Unit for time segmentation. Can take values: 'years', 'quarters', 'months', 'none'"
+    required: false
+    default: "months"
+  LABELS:
+    description: "Multiple labels for issue separated by comma"
+    required: false
+  ASSIGNEES:
+    description: "Multiple assignees for issue separated by comma"
+    required: false
+  ISSUE_TITLE:
+    description: "Title for issue"
+    required: false
+  AGGREGATE_VALUE_METHODS:
+    description: "Aggregate value methods separated by comma. Can take values: 'percentile', 'average', 'median'"
+    required: false
+    default: "percentile"
+  HIDE_USERS:
+    description: "Hidden users separated by comma"
+    required: false
+  SHOW_USERS:
+    descriptions: "Shown users separated by comma"
+    required: false
+  INCLUDE_LABELS:
+    description: "Includes only PRs with mentioned labels. Values should be separated by comma"
+    required: false
+  EXCLUDE_LABELS:
+    description: "Excludes PRs with mentioned labels. Values should be separated by comma"
+    required: false
+  INCLUDE_USERS:
+    description: "Only data for the specified users will be included in the report. Multiple values should be separated by commas"
+    required: false
+  EXCLUDE_USERS:
+    description: "Data for the specified users will be excluded from the report. Multiple values should be separated by commas"
+    required: false
+  TIMEZONE:
+    description: "Timezone to use in action"
+    required: false
+  EXECUTION_OUTCOME:
+    description: "Outcome format separated by comma. Can take values: 'markdown', 'new-issue', 'collection', 'existing-issue'"
+    required: false
+    default: "new-issue"
+  ISSUE_NUMBER:
+    description: "Issue number"
+    required: false
+  ALLOW_ANALYTICS:
+    description: "Allows sending non-sensitive inputs to mixpanel"
+    required: false
+    default: true
+  USE_CHARTS:
+    description: "Primarily uses charts and diagrams instead of tables to display data"
+    required: false
+    default: false
+  SHOW_CORRELATION_GRAPHS:
+    description: "Shows correlation graphs"
+    required: false
+    default: false
+  SHOW_ACTIVITY_TIME_GRAPHS:
+    description: "Shows activity time graphs"
+    required: false
+    default: false
+
+outputs:
+  JSON_COLLECTION:
+    description: "JSON string with stats"
+  MARKDOWN:
+    description: "Markdown text with a report"
+runs:
+  using: "node20"
+  main: "build/index.js"
