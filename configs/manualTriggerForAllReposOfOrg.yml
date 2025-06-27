@@ -41,3 +41,5 @@ jobs:
           REPORT_DATE_END: ${{ inputs.report_date_end }}
           ISSUE_TITLE: ${{ inputs.issue_title }}
           PERIOD_SPLIT_UNIT: ${{ inputs.period_split_unit }}
+          CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY }} # Optional: Supply your Cursor API key to include Cursor metrics
+          INCLUDE_CURSOR_ANALYTICS: true # Set to true to show Cursor metrics

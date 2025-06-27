@@ -9,6 +9,7 @@ import {
   getTeams,
 } from "./requests";
 import { collectData } from "./converters";
+import { integrateCursorMetrics } from "./converters/utils/integrateCursorMetrics";
 import {
   checkCommentSkip,
   getOrgs,
@@ -85,6 +86,10 @@ async function main() {
       }
     );
     const preparedData = collectData(mergedData, teams);
+
+    // If requested, augment with Cursor analytics metrics
+    await integrateCursorMetrics(preparedData, repos.map((r) => ({ owner: r[0], repo: r[1] })));
+
     console.log("Calculation complete. Generating markdown.");
     await createOutput(preparedData);
 

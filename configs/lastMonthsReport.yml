@@ -25,3 +25,5 @@ jobs:
           TOP_LIST_AMOUNT: 5
           EXECUTION_OUTCOME: existing-issue
           ISSUE_NUMBER: 999 # Set issue number or change EXECUTION_OUTCOME to new-issue
+          CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY }} # Optional Cursor API key
+          INCLUDE_CURSOR_ANALYTICS: true

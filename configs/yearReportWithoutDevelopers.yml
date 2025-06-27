@@ -48,3 +48,5 @@ jobs:
           EXECUTION_OUTCOME: new-issue
           SHOW_CORRELATION_GRAPHS: true
           SHOW_ACTIVITY_TIME_GRAPHS: true
+          CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY }}
+          INCLUDE_CURSOR_ANALYTICS: true

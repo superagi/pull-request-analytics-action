@@ -121,4 +121,11 @@ export type Collection = {
   >;
   reviewsConductedSize?: PullRequestSize[];
   pullRequestsInfo?: PullRequestTimelineInfo[];
+  /**
+   * Cursor analytics – aggregated over the same reporting period (typically last 7 days).
+   */
+  cursorTotalLinesAdded?: number;
+  cursorTotalLinesDeleted?: number;
+  cursorAcceptedLinesAdded?: number;
+  cursorAcceptedLinesDeleted?: number;
 };

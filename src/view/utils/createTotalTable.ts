@@ -7,6 +7,8 @@ import {
   totalRevertedPrsHeader,
   unapprovedPrsHeader,
   unreviewedPrsHeader,
+  cursorLinesHeader,
+  cursorAcceptedLinesHeader,
 } from "./constants";
 import { createList, createTable } from "./common";
 import { getValueAsIs } from "../../common/utils";
@@ -29,6 +31,12 @@ export const createTotalTable = (
         data[user]?.[date]?.unapproved?.toString() || "0",
         `+${data[user]?.[date].additions || 0}/-${
           data[user]?.[date].deletions || 0
+        }`,
+        `+${data[user]?.[date]?.cursorTotalLinesAdded || 0}/-${
+          data[user]?.[date]?.cursorTotalLinesDeleted || 0
+        }`,
+        `+${data[user]?.[date]?.cursorAcceptedLinesAdded || 0}/-${
+          data[user]?.[date]?.cursorAcceptedLinesDeleted || 0
         }`,
         `${sizes
           .map(
@@ -64,6 +72,8 @@ export const createTotalTable = (
           unreviewedPrsHeader,
           unapprovedPrsHeader,
           additionsDeletionsHeader,
+          cursorLinesHeader,
+          cursorAcceptedLinesHeader,
           prSizesHeader,
         ],
         rows: tableRowsTotal,
