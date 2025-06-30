@@ -147,6 +147,10 @@ outputs:
     description: "Markdown text with a report"
   CSV_FILE:
     description: "Path to generated CSV file containing all report tables"
+  CSV_GITHUB_FILE:
+    description: "Path to csv with only GitHub metrics"
+  CSV_CURSOR_FILE:
+    description: "Path to csv with only Cursor metrics"
 runs:
   using: "node20"
   main: "build/index.js"

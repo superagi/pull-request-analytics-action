@@ -13,6 +13,8 @@ import { octokit } from "./octokit";
 import { showStatsTypes } from "./common/constants";
 import { createActivityTimeMarkdown } from "./view/utils/createActivityTimeMarkdown";
 import { markdownToCsv } from "./view/utils/markdownToCsv";
+import { buildCsvFromData } from "./view/utils/buildCsvFromData";
+import { buildCsvFromCursorRaw } from "./view/utils/buildCsvFromCursorRaw";
 
 export const createOutput = async (
   data: Record<string, Record<string, Collection>>
@@ -134,7 +136,30 @@ export const createOutput = async (
       );
 
       // Always build csv from same markdown for output if requested later
-      const csvContentForTotal = markdownToCsv(markdown);
+      const aggregatedCursor: Record<string, Record<string, any>> = {};
+      ((data as any).cursorRaw || []).forEach((rec: any) => {
+        const key: string = (rec.githubUser || "").toLowerCase();
+        aggregatedCursor[key] = aggregatedCursor[key] || {};
+        Object.entries(rec).forEach(([k, v]) => {
+          if (k === "githubUser") return;
+          if (typeof v === "number") {
+            aggregatedCursor[key][k] = (aggregatedCursor[key][k] || 0) + (v as number);
+          } else if (v) aggregatedCursor[key][k] = v;
+        });
+      });
+
+      const loginEmails: Record<string,string> = (data as any).__loginEmails || {};
+      const csvCombined = buildCsvFromData(data, aggregatedCursor, loginEmails);
+      const csvGithubOnly = buildCsvFromData(data, {}, loginEmails);
+      const csvCursorOnly = buildCsvFromCursorRaw((data as any).cursorRaw || []);
+      const fs = await import("fs");
+      fs.writeFileSync("combined.csv", csvCombined, "utf8");
+      fs.writeFileSync("github_only.csv", csvGithubOnly, "utf8");
+      fs.writeFileSync("cursor_only.csv", csvCursorOnly, "utf8");
+      core.setOutput("CSV_FILE", "combined.csv");
+      core.setOutput("CSV_GITHUB_FILE", "github_only.csv");
+      core.setOutput("CSV_CURSOR_FILE", "cursor_only.csv");
+      console.log("CSV files created: combined.csv, github_only.csv, cursor_only.csv");
     }
 
     if (outcome === "markdown") {
@@ -151,15 +176,6 @@ export const createOutput = async (
     }
     if (outcome === "collection") {
       core.setOutput("JSON_COLLECTION", JSON.stringify(data));
-    }
-
-    if (outcome === "csv") {
-      const markdownAll = createMarkdown(data, users, dates);
-      const csv = markdownToCsv(markdownAll, (data as any).cursorRaw);
-      const fs = await import("fs");
-      fs.writeFileSync("report.csv", csv, "utf8");
-      core.setOutput("CSV_FILE", "report.csv");
-      console.log("CSV file created: report.csv");
     }
   }
 };

@@ -1254,6 +1254,7 @@ const integrateCursorMetrics = async (data, repos) => {
         return { githubUser: gh, ...rec };
     });
     data.cursorRaw = cursorRaw;
+    data.__loginEmails = loginEmailMap;
 };
 exports.integrateCursorMetrics = integrateCursorMetrics;
 
@@ -1950,7 +1951,8 @@ const utils_2 = __nccwpck_require__(92884);
 const octokit_1 = __nccwpck_require__(75455);
 const constants_1 = __nccwpck_require__(11140);
 const createActivityTimeMarkdown_1 = __nccwpck_require__(69751);
-const markdownToCsv_1 = __nccwpck_require__(3330);
+const buildCsvFromData_1 = __nccwpck_require__(61920);
+const buildCsvFromCursorRaw_1 = __nccwpck_require__(61963);
 const createOutput = async (data) => {
     const outcomes = (0, utils_1.getMultipleValuesInput)("EXECUTION_OUTCOME");
     // additional boolean flag to generate CSV without modifying EXECUTION_OUTCOME
@@ -2040,7 +2042,32 @@ const createOutput = async (data) => {
                 link: comment.comment.data.html_url,
             }))), issue.data.number);
             // Always build csv from same markdown for output if requested later
-            const csvContentForTotal = (0, markdownToCsv_1.markdownToCsv)(markdown);
+            const aggregatedCursor = {};
+            (data.cursorRaw || []).forEach((rec) => {
+                const key = (rec.githubUser || "").toLowerCase();
+                aggregatedCursor[key] = aggregatedCursor[key] || {};
+                Object.entries(rec).forEach(([k, v]) => {
+                    if (k === "githubUser")
+                        return;
+                    if (typeof v === "number") {
+                        aggregatedCursor[key][k] = (aggregatedCursor[key][k] || 0) + v;
+                    }
+                    else if (v)
+                        aggregatedCursor[key][k] = v;
+                });
+            });
+            const loginEmails = data.__loginEmails || {};
+            const csvCombined = (0, buildCsvFromData_1.buildCsvFromData)(data, aggregatedCursor, loginEmails);
+            const csvGithubOnly = (0, buildCsvFromData_1.buildCsvFromData)(data, {}, loginEmails);
+            const csvCursorOnly = (0, buildCsvFromCursorRaw_1.buildCsvFromCursorRaw)(data.cursorRaw || []);
+            const fs = await Promise.resolve(/* import() */).then(__nccwpck_require__.t.bind(__nccwpck_require__, 57147, 23));
+            fs.writeFileSync("combined.csv", csvCombined, "utf8");
+            fs.writeFileSync("github_only.csv", csvGithubOnly, "utf8");
+            fs.writeFileSync("cursor_only.csv", csvCursorOnly, "utf8");
+            core.setOutput("CSV_FILE", "combined.csv");
+            core.setOutput("CSV_GITHUB_FILE", "github_only.csv");
+            core.setOutput("CSV_CURSOR_FILE", "cursor_only.csv");
+            console.log("CSV files created: combined.csv, github_only.csv, cursor_only.csv");
         }
         if (outcome === "markdown") {
             const monthComparison = (0, utils_1.getMultipleValuesInput)("SHOW_STATS_TYPES").includes(constants_1.showStatsTypes.timeline)
@@ -2052,14 +2079,6 @@ const createOutput = async (data) => {
         }
         if (outcome === "collection") {
             core.setOutput("JSON_COLLECTION", JSON.stringify(data));
-        }
-        if (outcome === "csv") {
-            const markdownAll = (0, view_1.createMarkdown)(data, users, dates);
-            const csv = (0, markdownToCsv_1.markdownToCsv)(markdownAll, data.cursorRaw);
-            const fs = await Promise.resolve(/* import() */).then(__nccwpck_require__.t.bind(__nccwpck_require__, 57147, 23));
-            fs.writeFileSync("report.csv", csv, "utf8");
-            core.setOutput("CSV_FILE", "report.csv");
-            console.log("CSV file created: report.csv");
         }
     }
 };
@@ -2848,6 +2867,171 @@ Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.createMarkdown = void 0;
 var createMarkdown_1 = __nccwpck_require__(54184);
 Object.defineProperty(exports, "createMarkdown", ({ enumerable: true, get: function () { return createMarkdown_1.createMarkdown; } }));
+
+
+/***/ }),
+
+/***/ 61963:
+/***/ ((__unused_webpack_module, exports) => {
+
+"use strict";
+
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.buildCsvFromCursorRaw = void 0;
+const buildCsvFromCursorRaw = (cursorRaw) => {
+    if (!cursorRaw || cursorRaw.length === 0)
+        return "";
+    const numericHeaderOrder = [
+        "totalLinesAdded",
+        "totalLinesDeleted",
+        "acceptedLinesAdded",
+        "acceptedLinesDeleted",
+        "totalApplies",
+        "totalAccepts",
+        "totalRejects",
+        "totalTabsShown",
+        "totalTabsAccepted",
+        "composerRequests",
+        "chatRequests",
+        "agentRequests",
+        "cmdkUsages",
+        "subscriptionIncludedReqs",
+        "apiKeyReqs",
+        "usageBasedReqs",
+        "bugbotUsages",
+    ];
+    const stringFields = [
+        "date",
+        "isActive",
+        "mostUsedModel",
+        "applyMostUsedExtension",
+        "tabMostUsedExtension",
+        "clientVersion",
+        "email",
+    ];
+    const headers = ["githubUser", ...stringFields, ...numericHeaderOrder];
+    const rows = cursorRaw.map((rec) => {
+        const row = [];
+        row.push(rec.githubUser || "");
+        stringFields.forEach((f) => row.push(rec[f] ?? ""));
+        numericHeaderOrder.forEach((f) => row.push(rec[f] ?? 0));
+        return row.join(",");
+    });
+    return [headers.join(","), ...rows].join("\n");
+};
+exports.buildCsvFromCursorRaw = buildCsvFromCursorRaw;
+
+
+/***/ }),
+
+/***/ 61920:
+/***/ ((__unused_webpack_module, exports) => {
+
+"use strict";
+
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.buildCsvFromData = void 0;
+const buildCsvFromData = (data, aggregatedCursor, loginEmails = {}) => {
+    const baseHeaders = [
+        "openedPRs",
+        "mergedPRs",
+        "revertedPRs",
+        "unreviewedPRs",
+        "unapprovedPRs",
+        "additions",
+        "deletions",
+        "cursorLinesAdded",
+        "cursorLinesDeleted",
+        "cursorAcceptedLinesAdded",
+        "cursorAcceptedLinesDeleted",
+        // Timeline (percentile)
+        "timeline_timeInDraft",
+        "timeline_timeToReviewRequest",
+        "timeline_timeToReview",
+        "timeline_timeToApprove",
+        "timeline_timeToMerge",
+        // PR-Quality (author perspective)
+        "pr_totalDiscussionsReceived",
+        "pr_commentsReceived",
+        "pr_changesRequestedReceived",
+        // Review engagement (reviewer perspective)
+        "review_reviewsConducted",
+        "review_discussionsConducted",
+        "review_commentsConducted",
+        "review_changesRequested",
+        "review_commented",
+        "review_approved",
+        // Response time (median)
+        "response_timeFromOpenToResponse",
+        "response_timeFromInitialRequestToResponse",
+        "response_timeFromRepeatedRequestToResponse",
+    ];
+    // include every key found in aggregatedCursor numeric map (aside from the four headline ones)
+    const extraHeadersSet = new Set();
+    Object.values(aggregatedCursor).forEach((agg) => {
+        Object.keys(agg).forEach((k) => {
+            if ([
+                "totalLinesAdded",
+                "totalLinesDeleted",
+                "acceptedLinesAdded",
+                "acceptedLinesDeleted",
+            ].includes(k))
+                return; // already mapped
+            extraHeadersSet.add(k);
+        });
+    });
+    const extraHeaders = Array.from(extraHeadersSet);
+    const headers = ["user", "email", ...baseHeaders, ...extraHeaders];
+    const users = Object.keys(data).filter((u) => u !== "total").sort();
+    const rows = [];
+    users.forEach((u) => {
+        const col = data[u]?.total || {};
+        const cursor = aggregatedCursor[u.toLowerCase()] || {};
+        const rowVals = [];
+        rowVals.push(u);
+        rowVals.push(loginEmails[u] || "");
+        rowVals.push(col.opened || 0);
+        rowVals.push(col.merged || 0);
+        rowVals.push(col.reverted || 0);
+        rowVals.push(col.unreviewed || 0);
+        rowVals.push(col.unapproved || 0);
+        rowVals.push(col.additions || 0);
+        rowVals.push(col.deletions || 0);
+        rowVals.push(col.cursorTotalLinesAdded || 0);
+        rowVals.push(col.cursorTotalLinesDeleted || 0);
+        rowVals.push(col.cursorAcceptedLinesAdded || 0);
+        rowVals.push(col.cursorAcceptedLinesDeleted || 0);
+        // Timeline percentile  (use percentile; fallback to median; minutes)
+        rowVals.push(col.percentile?.timeInDraft || col.median?.timeInDraft || 0);
+        rowVals.push(col.percentile?.timeToReviewRequest || col.median?.timeToReviewRequest || 0);
+        rowVals.push(col.percentile?.timeToReview || col.median?.timeToReview || 0);
+        rowVals.push(col.percentile?.timeToApprove || col.median?.timeToApprove || 0);
+        rowVals.push(col.percentile?.timeToMerge || col.median?.timeToMerge || 0);
+        // PR Quality
+        rowVals.push(col.discussions?.received?.total || 0);
+        rowVals.push(col.reviewComments || 0);
+        rowVals.push(data["total"]?.total?.reviewsConducted?.[u]?.["changes_requested"] ||
+            0);
+        // Review engagement
+        rowVals.push(col.reviewsConducted?.total?.total || 0);
+        rowVals.push(col.discussions?.conducted?.total || 0);
+        rowVals.push(col.commentsConducted || 0);
+        rowVals.push(col.reviewsConducted?.total?.changes_requested || 0);
+        rowVals.push(col.reviewsConducted?.total?.commented || 0);
+        rowVals.push(col.reviewsConducted?.total?.approved || 0);
+        // Response time (median)
+        rowVals.push(col.median?.timeFromOpenToResponse || 0);
+        rowVals.push(col.median?.timeFromInitialRequestToResponse || 0);
+        rowVals.push(col.median?.timeFromRepeatedRequestToResponse || 0);
+        extraHeaders.forEach((h) => {
+            const v = cursor[h];
+            rowVals.push(v !== undefined ? v : "");
+        });
+        rows.push(rowVals.join(","));
+    });
+    return [headers.join(","), ...rows].join("\n");
+};
+exports.buildCsvFromData = buildCsvFromData;
 
 
 /***/ }),
@@ -4104,191 +4288,6 @@ var createReferences_1 = __nccwpck_require__(96145);
 Object.defineProperty(exports, "createReferences", ({ enumerable: true, get: function () { return createReferences_1.createReferences; } }));
 var createResponseTable_1 = __nccwpck_require__(70351);
 Object.defineProperty(exports, "createResponseTable", ({ enumerable: true, get: function () { return createResponseTable_1.createResponseTable; } }));
-
-
-/***/ }),
-
-/***/ 3330:
-/***/ ((__unused_webpack_module, exports) => {
-
-"use strict";
-
-Object.defineProperty(exports, "__esModule", ({ value: true }));
-exports.markdownToCsv = void 0;
-const markdownToCsv = (markdown, cursorRaw = undefined) => {
-    const lines = markdown.split(/\r?\n/);
-    const records = {};
-    const headers = [];
-    const headerSet = new Set();
-    let currentHeader = null;
-    let alignmentExpected = false;
-    let sectionInitials = "";
-    // Rules for which headers should be split on '/'
-    const splitRules = [
-        {
-            pattern: /additions\s*\/\s*deletions/i,
-            names: (p) => ["Additions", "Deletions"].map((n) => (p ? `${p} ${n}` : n)),
-        },
-        {
-            pattern: /cursor lines added\s*\/\s*deleted/i,
-            names: (p) => ["Cursor lines added", "Cursor lines deleted"],
-        },
-        {
-            pattern: /cursor accepted lines added\s*\/\s*deleted/i,
-            names: (p) => ["Cursor accepted lines added", "Cursor accepted lines deleted"],
-        },
-        {
-            pattern: /agreed\s*\/\s*disagreed\s*\/\s*total discussions received/i,
-            names: (p) => [
-                `${p}Agreed discussions received`.trim(),
-                `${p}Disagreed discussions received`.trim(),
-                `${p}Total discussions received`.trim(),
-            ],
-        },
-        {
-            pattern: /agreed\s*\/\s*disagreed\s*\/\s*total discussions conducted/i,
-            names: (p) => [
-                `${p}Agreed discussions conducted`.trim(),
-                `${p}Disagreed discussions conducted`.trim(),
-                `${p}Total discussions conducted`.trim(),
-            ],
-        },
-        {
-            pattern: /changes requested\s*\/\s*commented\s*\/\s*approved/i,
-            names: (p) => [
-                `${p}Changes requested`.trim(),
-                `${p}Commented`.trim(),
-                `${p}Approved`.trim(),
-            ],
-        },
-    ];
-    const headerSplitMap = {}; // original index -> parts count
-    const processHeaderCell = (cell, idx) => {
-        const rule = splitRules.find((r) => r.pattern.test(cell));
-        if (!rule)
-            return;
-        const prefixMatch = cell.match(/^(.*?)\s*\w+\s*\/ /i);
-        const prefix = prefixMatch ? prefixMatch[1].trim() + " " : "";
-        const newHeaders = rule.names(prefix);
-        currentHeader.splice(idx, 1, ...newHeaders);
-        headerSplitMap[idx] = newHeaders.length; // how many columns derived from this cell
-    };
-    const ensureHeader = (hdr) => {
-        if (!headerSet.has(hdr)) {
-            headerSet.add(hdr);
-            headers.push(hdr);
-        }
-    };
-    lines.forEach((line) => {
-        const trimmed = line.trim();
-        const sectionMatch = trimmed.match(/^###\s+(.*)/);
-        if (sectionMatch) {
-            const title = sectionMatch[1].trim();
-            const lowerTitle = title.toLowerCase();
-            if (lowerTitle.includes("pull request quality")) {
-                sectionInitials = "PR";
-            }
-            else if (lowerTitle.includes("code review engagement")) {
-                sectionInitials = "review";
-            }
-            else {
-                sectionInitials = title
-                    .split(/\s+/)
-                    .map((w) => w[0]?.toUpperCase() || "")
-                    .join("");
-            }
-            currentHeader = null;
-            return;
-        }
-        if (!trimmed.startsWith("|")) {
-            // reset on any non-table line
-            currentHeader = null;
-            alignmentExpected = false;
-            return;
-        }
-        const cellsOrig = trimmed.slice(1, -1).split("|").map((c) => c.trim());
-        // alignment row check
-        const isAlignment = cellsOrig.every((c) => /^:?-{3,}:?$/.test(c));
-        if (isAlignment) {
-            alignmentExpected = false;
-            return;
-        }
-        if (!currentHeader) {
-            // this is a header row
-            currentHeader = [...cellsOrig];
-            // expand combined headers
-            for (let i = 0; i < currentHeader.length; i++) {
-                processHeaderCell(currentHeader[i], i);
-            }
-            // collect headers except first (user)
-            currentHeader.slice(1).forEach((hdr, idx) => {
-                let uniqueHdr = hdr;
-                if (headerSet.has(uniqueHdr)) {
-                    uniqueHdr = `${sectionInitials} ${uniqueHdr}`.trim();
-                    currentHeader[idx + 1] = uniqueHdr; // adjust stored header
-                }
-                ensureHeader(uniqueHdr);
-            });
-            alignmentExpected = true;
-            return;
-        }
-        if (alignmentExpected) {
-            // alignment row should have been handled already, but just in case
-            alignmentExpected = false;
-            return;
-        }
-        // data row – expand only for columns we split
-        const dataCells = [];
-        for (let idx = 0; idx < cellsOrig.length; idx++) {
-            const cellVal = cellsOrig[idx];
-            const partsCount = headerSplitMap[idx];
-            if (partsCount) {
-                const parts = cellVal.split("/").map((p) => p.trim());
-                while (parts.length < partsCount)
-                    parts.push("");
-                dataCells.push(...parts.slice(0, partsCount));
-            }
-            else {
-                dataCells.push(cellVal);
-            }
-        }
-        const user = dataCells[0].replace(/^[*]+|[*]+$/g, "");
-        if (!records[user])
-            records[user] = {};
-        for (let i = 1; i < currentHeader.length; i++) {
-            let hdr = currentHeader[i];
-            const val = dataCells[i] ?? "";
-            if (val !== "") {
-                records[user][hdr] = val;
-            }
-            ensureHeader(hdr);
-        }
-    });
-    // merge cursor raw
-    if (cursorRaw && cursorRaw.length) {
-        cursorRaw.forEach((rec) => {
-            const user = rec.githubUser || (rec.email ? rec.email.split("@")[0] : "");
-            if (!user)
-                return;
-            if (!records[user])
-                records[user] = {};
-            Object.keys(rec).forEach((key) => {
-                if (key === "githubUser")
-                    return;
-                ensureHeader(key);
-                records[user][key] = String(rec[key] ?? "");
-            });
-        });
-    }
-    // Build CSV
-    const csvHeader = ["user", ...headers].join(",");
-    const csvRows = Object.keys(records).map((user) => {
-        const rowVals = headers.map((h) => records[user][h] ?? "");
-        return [user, ...rowVals].join(",");
-    });
-    return [csvHeader, ...csvRows].join("\n");
-};
-exports.markdownToCsv = markdownToCsv;
 
 
 /***/ }),

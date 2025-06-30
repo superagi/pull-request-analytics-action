@@ -153,4 +153,5 @@ export const integrateCursorMetrics = async (
   });
 
   (data as any).cursorRaw = cursorRaw;
+  (data as any).__loginEmails = loginEmailMap;
 }; 
