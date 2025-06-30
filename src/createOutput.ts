@@ -12,11 +12,18 @@ import {
 import { octokit } from "./octokit";
 import { showStatsTypes } from "./common/constants";
 import { createActivityTimeMarkdown } from "./view/utils/createActivityTimeMarkdown";
+import { markdownToCsv } from "./view/utils/markdownToCsv";
 
 export const createOutput = async (
   data: Record<string, Record<string, Collection>>
 ) => {
   const outcomes = getMultipleValuesInput("EXECUTION_OUTCOME");
+
+  // additional boolean flag to generate CSV without modifying EXECUTION_OUTCOME
+  if (getValueAsIs("SAVE_CSV") === "true" && !outcomes.includes("csv")) {
+    outcomes.push("csv");
+  }
+
   for (let outcome of outcomes) {
     const users = getDisplayUserList(data);
     const dates = sortCollectionsByDate(data.total);
@@ -125,6 +132,9 @@ export const createOutput = async (
         ),
         issue.data.number
       );
+
+      // Always build csv from same markdown for output if requested later
+      const csvContentForTotal = markdownToCsv(markdown);
     }
 
     if (outcome === "markdown") {
@@ -141,6 +151,15 @@ export const createOutput = async (
     }
     if (outcome === "collection") {
       core.setOutput("JSON_COLLECTION", JSON.stringify(data));
+    }
+
+    if (outcome === "csv") {
+      const markdownAll = createMarkdown(data, users, dates);
+      const csv = markdownToCsv(markdownAll, (data as any).cursorRaw);
+      const fs = await import("fs");
+      fs.writeFileSync("report.csv", csv, "utf8");
+      core.setOutput("CSV_FILE", "report.csv");
+      console.log("CSV file created: report.csv");
     }
   }
 };

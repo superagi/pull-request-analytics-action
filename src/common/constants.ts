@@ -30,6 +30,7 @@ export const executionOutcomes = {
   "existing-issue": "existing-issue",
   markdown: "markdown",
   collection: "collection",
+  csv: "csv",
 };
 
 export const periodSplitUnit = {

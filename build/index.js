@@ -181,6 +181,7 @@ exports.executionOutcomes = {
     "existing-issue": "existing-issue",
     markdown: "markdown",
     collection: "collection",
+    csv: "csv",
 };
 exports.periodSplitUnit = {
     years: "years",
@@ -1129,26 +1130,52 @@ const integrateCursorMetrics = async (data, repos) => {
         return;
     // aggregate per email *local part* (before "@") so different domains for the same user are combined
     const emailAggregates = {};
+    const numericKeys = [
+        "totalLinesAdded",
+        "totalLinesDeleted",
+        "acceptedLinesAdded",
+        "acceptedLinesDeleted",
+        "totalApplies",
+        "totalAccepts",
+        "totalRejects",
+        "totalTabsShown",
+        "totalTabsAccepted",
+        "composerRequests",
+        "chatRequests",
+        "agentRequests",
+        "cmdkUsages",
+        "subscriptionIncludedReqs",
+        "apiKeyReqs",
+        "usageBasedReqs",
+        "bugbotUsages",
+    ];
     cursorRecords.forEach((rec) => {
         const email = rec.email;
         if (!email)
             return;
         const local = email.split("@")[0].toLowerCase();
         if (!emailAggregates[local]) {
-            emailAggregates[local] = {
-                totalLinesAdded: 0,
-                totalLinesDeleted: 0,
-                acceptedLinesAdded: 0,
-                acceptedLinesDeleted: 0,
-            };
+            emailAggregates[local] = {};
+            numericKeys.forEach((k) => (emailAggregates[local][k] = 0));
         }
-        emailAggregates[local].totalLinesAdded += rec.totalLinesAdded || 0;
-        emailAggregates[local].totalLinesDeleted += rec.totalLinesDeleted || 0;
-        emailAggregates[local].acceptedLinesAdded += rec.acceptedLinesAdded || 0;
-        emailAggregates[local].acceptedLinesDeleted += rec.acceptedLinesDeleted || 0;
+        numericKeys.forEach((k) => {
+            emailAggregates[local][k] =
+                emailAggregates[local][k] + (rec[k] || 0);
+        });
+        // non-numeric fields keep last non-empty value
+        [
+            "mostUsedModel",
+            "applyMostUsedExtension",
+            "tabMostUsedExtension",
+            "clientVersion",
+        ].forEach((k) => {
+            if (rec[k])
+                emailAggregates[local][k] = rec[k];
+        });
     });
     const logins = Object.keys(data).filter((login) => login !== "total");
     const loginEmailMap = {};
+    const localToLogins = {};
     for (const login of logins) {
         // attempt to find email if not already mapped
         for (const repo of repos) {
@@ -1163,6 +1190,8 @@ const integrateCursorMetrics = async (data, repos) => {
                     const email = commits.data[0].commit.author?.email;
                     if (email) {
                         loginEmailMap[login] = email;
+                        const local = email.split("@")[0].toLowerCase();
+                        localToLogins[local] = [...(localToLogins[local] || []), login];
                         break;
                     }
                 }
@@ -1184,10 +1213,14 @@ const integrateCursorMetrics = async (data, repos) => {
         if (!data[login].total) {
             data[login].total = {};
         }
-        data[login].total.cursorTotalLinesAdded = aggregate.totalLinesAdded;
-        data[login].total.cursorTotalLinesDeleted = aggregate.totalLinesDeleted;
-        data[login].total.cursorAcceptedLinesAdded = aggregate.acceptedLinesAdded;
-        data[login].total.cursorAcceptedLinesDeleted = aggregate.acceptedLinesDeleted;
+        data[login].total.cursorTotalLinesAdded =
+            aggregate.totalLinesAdded || 0;
+        data[login].total.cursorTotalLinesDeleted =
+            aggregate.totalLinesDeleted || 0;
+        data[login].total.cursorAcceptedLinesAdded =
+            aggregate.acceptedLinesAdded || 0;
+        data[login].total.cursorAcceptedLinesDeleted =
+            aggregate.acceptedLinesDeleted || 0;
     }
     // compute overall totals
     let totalLinesAdded = 0;
@@ -1213,6 +1246,14 @@ const integrateCursorMetrics = async (data, repos) => {
     data.total.total.cursorTotalLinesDeleted = totalLinesDeleted;
     data.total.total.cursorAcceptedLinesAdded = totalAcceptedLinesAdded;
     data.total.total.cursorAcceptedLinesDeleted = totalAcceptedLinesDeleted;
+    // Prepare raw records with github mapping for csv
+    const cursorRaw = cursorRecords.map((rec) => {
+        const local = (rec.email || "").split("@")[0].toLowerCase();
+        // pick first login or fallback to local part
+        const gh = localToLogins[local]?.[0] || local;
+        return { githubUser: gh, ...rec };
+    });
+    data.cursorRaw = cursorRaw;
 };
 exports.integrateCursorMetrics = integrateCursorMetrics;
 
@@ -1909,8 +1950,13 @@ const utils_2 = __nccwpck_require__(92884);
 const octokit_1 = __nccwpck_require__(75455);
 const constants_1 = __nccwpck_require__(11140);
 const createActivityTimeMarkdown_1 = __nccwpck_require__(69751);
+const markdownToCsv_1 = __nccwpck_require__(3330);
 const createOutput = async (data) => {
     const outcomes = (0, utils_1.getMultipleValuesInput)("EXECUTION_OUTCOME");
+    // additional boolean flag to generate CSV without modifying EXECUTION_OUTCOME
+    if ((0, utils_1.getValueAsIs)("SAVE_CSV") === "true" && !outcomes.includes("csv")) {
+        outcomes.push("csv");
+    }
     for (let outcome of outcomes) {
         const users = (0, utils_2.getDisplayUserList)(data);
         const dates = (0, utils_2.sortCollectionsByDate)(data.total);
@@ -1993,6 +2039,8 @@ const createOutput = async (data) => {
                 title: `Pull Request report ${comment.title}`,
                 link: comment.comment.data.html_url,
             }))), issue.data.number);
+            // Always build csv from same markdown for output if requested later
+            const csvContentForTotal = (0, markdownToCsv_1.markdownToCsv)(markdown);
         }
         if (outcome === "markdown") {
             const monthComparison = (0, utils_1.getMultipleValuesInput)("SHOW_STATS_TYPES").includes(constants_1.showStatsTypes.timeline)
@@ -2004,6 +2052,14 @@ const createOutput = async (data) => {
         }
         if (outcome === "collection") {
             core.setOutput("JSON_COLLECTION", JSON.stringify(data));
+        }
+        if (outcome === "csv") {
+            const markdownAll = (0, view_1.createMarkdown)(data, users, dates);
+            const csv = (0, markdownToCsv_1.markdownToCsv)(markdownAll, data.cursorRaw);
+            const fs = await Promise.resolve(/* import() */).then(__nccwpck_require__.t.bind(__nccwpck_require__, 57147, 23));
+            fs.writeFileSync("report.csv", csv, "utf8");
+            core.setOutput("CSV_FILE", "report.csv");
+            console.log("CSV file created: report.csv");
         }
     }
 };
@@ -4048,6 +4104,191 @@ var createReferences_1 = __nccwpck_require__(96145);
 Object.defineProperty(exports, "createReferences", ({ enumerable: true, get: function () { return createReferences_1.createReferences; } }));
 var createResponseTable_1 = __nccwpck_require__(70351);
 Object.defineProperty(exports, "createResponseTable", ({ enumerable: true, get: function () { return createResponseTable_1.createResponseTable; } }));
+
+
+/***/ }),
+
+/***/ 3330:
+/***/ ((__unused_webpack_module, exports) => {
+
+"use strict";
+
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.markdownToCsv = void 0;
+const markdownToCsv = (markdown, cursorRaw = undefined) => {
+    const lines = markdown.split(/\r?\n/);
+    const records = {};
+    const headers = [];
+    const headerSet = new Set();
+    let currentHeader = null;
+    let alignmentExpected = false;
+    let sectionInitials = "";
+    // Rules for which headers should be split on '/'
+    const splitRules = [
+        {
+            pattern: /additions\s*\/\s*deletions/i,
+            names: (p) => ["Additions", "Deletions"].map((n) => (p ? `${p} ${n}` : n)),
+        },
+        {
+            pattern: /cursor lines added\s*\/\s*deleted/i,
+            names: (p) => ["Cursor lines added", "Cursor lines deleted"],
+        },
+        {
+            pattern: /cursor accepted lines added\s*\/\s*deleted/i,
+            names: (p) => ["Cursor accepted lines added", "Cursor accepted lines deleted"],
+        },
+        {
+            pattern: /agreed\s*\/\s*disagreed\s*\/\s*total discussions received/i,
+            names: (p) => [
+                `${p}Agreed discussions received`.trim(),
+                `${p}Disagreed discussions received`.trim(),
+                `${p}Total discussions received`.trim(),
+            ],
+        },
+        {
+            pattern: /agreed\s*\/\s*disagreed\s*\/\s*total discussions conducted/i,
+            names: (p) => [
+                `${p}Agreed discussions conducted`.trim(),
+                `${p}Disagreed discussions conducted`.trim(),
+                `${p}Total discussions conducted`.trim(),
+            ],
+        },
+        {
+            pattern: /changes requested\s*\/\s*commented\s*\/\s*approved/i,
+            names: (p) => [
+                `${p}Changes requested`.trim(),
+                `${p}Commented`.trim(),
+                `${p}Approved`.trim(),
+            ],
+        },
+    ];
+    const headerSplitMap = {}; // original index -> parts count
+    const processHeaderCell = (cell, idx) => {
+        const rule = splitRules.find((r) => r.pattern.test(cell));
+        if (!rule)
+            return;
+        const prefixMatch = cell.match(/^(.*?)\s*\w+\s*\/ /i);
+        const prefix = prefixMatch ? prefixMatch[1].trim() + " " : "";
+        const newHeaders = rule.names(prefix);
+        currentHeader.splice(idx, 1, ...newHeaders);
+        headerSplitMap[idx] = newHeaders.length; // how many columns derived from this cell
+    };
+    const ensureHeader = (hdr) => {
+        if (!headerSet.has(hdr)) {
+            headerSet.add(hdr);
+            headers.push(hdr);
+        }
+    };
+    lines.forEach((line) => {
+        const trimmed = line.trim();
+        const sectionMatch = trimmed.match(/^###\s+(.*)/);
+        if (sectionMatch) {
+            const title = sectionMatch[1].trim();
+            const lowerTitle = title.toLowerCase();
+            if (lowerTitle.includes("pull request quality")) {
+                sectionInitials = "PR";
+            }
+            else if (lowerTitle.includes("code review engagement")) {
+                sectionInitials = "review";
+            }
+            else {
+                sectionInitials = title
+                    .split(/\s+/)
+                    .map((w) => w[0]?.toUpperCase() || "")
+                    .join("");
+            }
+            currentHeader = null;
+            return;
+        }
+        if (!trimmed.startsWith("|")) {
+            // reset on any non-table line
+            currentHeader = null;
+            alignmentExpected = false;
+            return;
+        }
+        const cellsOrig = trimmed.slice(1, -1).split("|").map((c) => c.trim());
+        // alignment row check
+        const isAlignment = cellsOrig.every((c) => /^:?-{3,}:?$/.test(c));
+        if (isAlignment) {
+            alignmentExpected = false;
+            return;
+        }
+        if (!currentHeader) {
+            // this is a header row
+            currentHeader = [...cellsOrig];
+            // expand combined headers
+            for (let i = 0; i < currentHeader.length; i++) {
+                processHeaderCell(currentHeader[i], i);
+            }
+            // collect headers except first (user)
+            currentHeader.slice(1).forEach((hdr, idx) => {
+                let uniqueHdr = hdr;
+                if (headerSet.has(uniqueHdr)) {
+                    uniqueHdr = `${sectionInitials} ${uniqueHdr}`.trim();
+                    currentHeader[idx + 1] = uniqueHdr; // adjust stored header
+                }
+                ensureHeader(uniqueHdr);
+            });
+            alignmentExpected = true;
+            return;
+        }
+        if (alignmentExpected) {
+            // alignment row should have been handled already, but just in case
+            alignmentExpected = false;
+            return;
+        }
+        // data row – expand only for columns we split
+        const dataCells = [];
+        for (let idx = 0; idx < cellsOrig.length; idx++) {
+            const cellVal = cellsOrig[idx];
+            const partsCount = headerSplitMap[idx];
+            if (partsCount) {
+                const parts = cellVal.split("/").map((p) => p.trim());
+                while (parts.length < partsCount)
+                    parts.push("");
+                dataCells.push(...parts.slice(0, partsCount));
+            }
+            else {
+                dataCells.push(cellVal);
+            }
+        }
+        const user = dataCells[0].replace(/^[*]+|[*]+$/g, "");
+        if (!records[user])
+            records[user] = {};
+        for (let i = 1; i < currentHeader.length; i++) {
+            let hdr = currentHeader[i];
+            const val = dataCells[i] ?? "";
+            if (val !== "") {
+                records[user][hdr] = val;
+            }
+            ensureHeader(hdr);
+        }
+    });
+    // merge cursor raw
+    if (cursorRaw && cursorRaw.length) {
+        cursorRaw.forEach((rec) => {
+            const user = rec.githubUser || (rec.email ? rec.email.split("@")[0] : "");
+            if (!user)
+                return;
+            if (!records[user])
+                records[user] = {};
+            Object.keys(rec).forEach((key) => {
+                if (key === "githubUser")
+                    return;
+                ensureHeader(key);
+                records[user][key] = String(rec[key] ?? "");
+            });
+        });
+    }
+    // Build CSV
+    const csvHeader = ["user", ...headers].join(",");
+    const csvRows = Object.keys(records).map((user) => {
+        const rowVals = headers.map((h) => records[user][h] ?? "");
+        return [user, ...rowVals].join(",");
+    });
+    return [csvHeader, ...csvRows].join("\n");
+};
+exports.markdownToCsv = markdownToCsv;
 
 
 /***/ }),
@@ -92934,6 +93175,64 @@ module.exports = JSON.parse('{"name":"mixpanel","description":"A simple server-s
 /******/ 	}
 /******/ 	
 /************************************************************************/
+/******/ 	/* webpack/runtime/create fake namespace object */
+/******/ 	(() => {
+/******/ 		var getProto = Object.getPrototypeOf ? (obj) => (Object.getPrototypeOf(obj)) : (obj) => (obj.__proto__);
+/******/ 		var leafPrototypes;
+/******/ 		// create a fake namespace object
+/******/ 		// mode & 1: value is a module id, require it
+/******/ 		// mode & 2: merge all properties of value into the ns
+/******/ 		// mode & 4: return value when already ns object
+/******/ 		// mode & 16: return value when it's Promise-like
+/******/ 		// mode & 8|1: behave like require
+/******/ 		__nccwpck_require__.t = function(value, mode) {
+/******/ 			if(mode & 1) value = this(value);
+/******/ 			if(mode & 8) return value;
+/******/ 			if(typeof value === 'object' && value) {
+/******/ 				if((mode & 4) && value.__esModule) return value;
+/******/ 				if((mode & 16) && typeof value.then === 'function') return value;
+/******/ 			}
+/******/ 			var ns = Object.create(null);
+/******/ 			__nccwpck_require__.r(ns);
+/******/ 			var def = {};
+/******/ 			leafPrototypes = leafPrototypes || [null, getProto({}), getProto([]), getProto(getProto)];
+/******/ 			for(var current = mode & 2 && value; typeof current == 'object' && !~leafPrototypes.indexOf(current); current = getProto(current)) {
+/******/ 				Object.getOwnPropertyNames(current).forEach((key) => (def[key] = () => (value[key])));
+/******/ 			}
+/******/ 			def['default'] = () => (value);
+/******/ 			__nccwpck_require__.d(ns, def);
+/******/ 			return ns;
+/******/ 		};
+/******/ 	})();
+/******/ 	
+/******/ 	/* webpack/runtime/define property getters */
+/******/ 	(() => {
+/******/ 		// define getter functions for harmony exports
+/******/ 		__nccwpck_require__.d = (exports, definition) => {
+/******/ 			for(var key in definition) {
+/******/ 				if(__nccwpck_require__.o(definition, key) && !__nccwpck_require__.o(exports, key)) {
+/******/ 					Object.defineProperty(exports, key, { enumerable: true, get: definition[key] });
+/******/ 				}
+/******/ 			}
+/******/ 		};
+/******/ 	})();
+/******/ 	
+/******/ 	/* webpack/runtime/hasOwnProperty shorthand */
+/******/ 	(() => {
+/******/ 		__nccwpck_require__.o = (obj, prop) => (Object.prototype.hasOwnProperty.call(obj, prop))
+/******/ 	})();
+/******/ 	
+/******/ 	/* webpack/runtime/make namespace object */
+/******/ 	(() => {
+/******/ 		// define __esModule on exports
+/******/ 		__nccwpck_require__.r = (exports) => {
+/******/ 			if(typeof Symbol !== 'undefined' && Symbol.toStringTag) {
+/******/ 				Object.defineProperty(exports, Symbol.toStringTag, { value: 'Module' });
+/******/ 			}
+/******/ 			Object.defineProperty(exports, '__esModule', { value: true });
+/******/ 		};
+/******/ 	})();
+/******/ 	
 /******/ 	/* webpack/runtime/node module decorator */
 /******/ 	(() => {
 /******/ 		__nccwpck_require__.nmd = (module) => {
