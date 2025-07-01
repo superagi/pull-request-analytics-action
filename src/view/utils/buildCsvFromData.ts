@@ -1,10 +1,19 @@
 import { Collection } from "../../converters/types";
+import { format } from "date-fns";
 
+type BuildCsvOptions = {
+  endDate?: Date | null;
+};
+
+// backwards compatible overload
 export const buildCsvFromData = (
   data: Record<string, Record<string, Collection>>,
   aggregatedCursor: Record<string, Record<string, any>>,
-  loginEmails: Record<string, string> = {}
+  loginEmails: Record<string, string> = {},
+  options: BuildCsvOptions = {}
 ) => {
+  const { endDate } = options;
+
   const baseHeaders = [
     "openedPRs",
     "mergedPRs",
@@ -58,16 +67,24 @@ export const buildCsvFromData = (
   });
 
   const extraHeaders = Array.from(extraHeadersSet);
-  const headers = ["user", "email", ...baseHeaders, ...extraHeaders];
+  const headers = [
+    "user",
+    "email",
+    "Date(UTC)",
+    ...baseHeaders,
+    ...extraHeaders,
+  ];
 
   const users = Object.keys(data).filter((u) => u !== "total").sort();
   const rows: string[] = [];
+  const reportDateUtc = endDate ? format(endDate, "yyyy-MM-dd") : "";
   users.forEach((u) => {
     const col = data[u]?.total || ({} as Collection);
     const cursor = aggregatedCursor[u.toLowerCase()] || {};
     const rowVals: (string | number)[] = [];
     rowVals.push(u);
     rowVals.push(loginEmails[u] || "");
+    rowVals.push(reportDateUtc);
     rowVals.push(col.opened || 0);
     rowVals.push(col.merged || 0);
     rowVals.push(col.reverted || 0);

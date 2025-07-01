@@ -15,6 +15,7 @@ import { createActivityTimeMarkdown } from "./view/utils/createActivityTimeMarkd
 import { markdownToCsv } from "./view/utils/markdownToCsv";
 import { buildCsvFromData } from "./view/utils/buildCsvFromData";
 import { buildCsvFromCursorRaw } from "./view/utils/buildCsvFromCursorRaw";
+import { getReportDates } from "./requests/utils";
 
 export const createOutput = async (
   data: Record<string, Record<string, Collection>>
@@ -149,8 +150,9 @@ export const createOutput = async (
       });
 
       const loginEmails: Record<string,string> = (data as any).__loginEmails || {};
-      const csvCombined = buildCsvFromData(data, aggregatedCursor, loginEmails);
-      const csvGithubOnly = buildCsvFromData(data, {}, loginEmails);
+      const { endDate } = getReportDates();
+      const csvCombined = buildCsvFromData(data, aggregatedCursor, loginEmails, { endDate });
+      const csvGithubOnly = buildCsvFromData(data, {}, loginEmails, { endDate });
       const csvCursorOnly = buildCsvFromCursorRaw((data as any).cursorRaw || []);
       const fs = await import("fs");
       fs.writeFileSync("combined.csv", csvCombined, "utf8");

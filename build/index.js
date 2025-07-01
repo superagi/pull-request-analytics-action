@@ -1953,6 +1953,7 @@ const constants_1 = __nccwpck_require__(11140);
 const createActivityTimeMarkdown_1 = __nccwpck_require__(69751);
 const buildCsvFromData_1 = __nccwpck_require__(61920);
 const buildCsvFromCursorRaw_1 = __nccwpck_require__(61963);
+const utils_3 = __nccwpck_require__(50426);
 const createOutput = async (data) => {
     const outcomes = (0, utils_1.getMultipleValuesInput)("EXECUTION_OUTCOME");
     // additional boolean flag to generate CSV without modifying EXECUTION_OUTCOME
@@ -2057,8 +2058,9 @@ const createOutput = async (data) => {
                 });
             });
             const loginEmails = data.__loginEmails || {};
-            const csvCombined = (0, buildCsvFromData_1.buildCsvFromData)(data, aggregatedCursor, loginEmails);
-            const csvGithubOnly = (0, buildCsvFromData_1.buildCsvFromData)(data, {}, loginEmails);
+            const { endDate } = (0, utils_3.getReportDates)();
+            const csvCombined = (0, buildCsvFromData_1.buildCsvFromData)(data, aggregatedCursor, loginEmails, { endDate });
+            const csvGithubOnly = (0, buildCsvFromData_1.buildCsvFromData)(data, {}, loginEmails, { endDate });
             const csvCursorOnly = (0, buildCsvFromCursorRaw_1.buildCsvFromCursorRaw)(data.cursorRaw || []);
             const fs = await Promise.resolve(/* import() */).then(__nccwpck_require__.t.bind(__nccwpck_require__, 57147, 23));
             fs.writeFileSync("combined.csv", csvCombined, "utf8");
@@ -2552,6 +2554,10 @@ const utils_1 = __nccwpck_require__(50426);
 const getPullRequests = async (amount = 10, repository) => {
     const { startDate, endDate } = (0, utils_1.getReportDates)();
     const { owner, repo } = repository;
+    // If start and end dates are the same day, extend end date by 1 day so that the whole day is included (closed_at is usually later than midnight)
+    const effectiveEndDate = startDate && endDate && (0, date_fns_1.isEqual)(startDate, endDate)
+        ? (0, date_fns_1.addDays)(endDate, 1)
+        : endDate;
     const data = [];
     for (let i = 0, dateMatched = !!startDate; startDate ? dateMatched : i < Math.ceil(amount / 100); i++) {
         const pulls = await octokit_1.octokit.rest.pulls.list({
@@ -2568,19 +2574,22 @@ const getPullRequests = async (amount = 10, repository) => {
             const filteredPulls = pulls.data.filter((pr) => {
                 const closedDate = pr.closed_at ? (0, date_fns_1.parseISO)(pr.closed_at) : null;
                 if (closedDate) {
-                    const isBeforeEndDate = endDate
-                        ? (0, date_fns_1.isBefore)(closedDate, endDate)
+                    const isBeforeOrEqualEndDate = effectiveEndDate
+                        ? (0, date_fns_1.isBefore)(closedDate, effectiveEndDate) || (0, date_fns_1.isEqual)(closedDate, effectiveEndDate)
                         : true;
-                    const isAfterStartDate = startDate
-                        ? (0, date_fns_1.isAfter)(closedDate, startDate)
+                    const isAfterOrEqualStartDate = startDate
+                        ? (0, date_fns_1.isAfter)(closedDate, startDate) || (0, date_fns_1.isEqual)(closedDate, startDate)
                         : true;
-                    return isBeforeEndDate && isAfterStartDate;
+                    return isBeforeOrEqualEndDate && isAfterOrEqualStartDate;
                 }
                 return false;
             });
-            dateMatched = pulls.data.some((pr) => startDate && pr.updated_at
-                ? (0, date_fns_1.isBefore)(startDate, (0, date_fns_1.parseISO)(pr.updated_at))
-                : null);
+            dateMatched = pulls.data.some((pr) => {
+                if (!startDate || !pr.updated_at)
+                    return null;
+                const updatedDate = (0, date_fns_1.parseISO)(pr.updated_at);
+                return (0, date_fns_1.isBefore)(startDate, updatedDate) || (0, date_fns_1.isEqual)(startDate, updatedDate);
+            });
             data.push(...filteredPulls);
         }
         else {
@@ -2901,7 +2910,6 @@ const buildCsvFromCursorRaw = (cursorRaw) => {
         "bugbotUsages",
     ];
     const stringFields = [
-        "date",
         "isActive",
         "mostUsedModel",
         "applyMostUsedExtension",
@@ -2909,10 +2917,13 @@ const buildCsvFromCursorRaw = (cursorRaw) => {
         "clientVersion",
         "email",
     ];
-    const headers = ["githubUser", ...stringFields, ...numericHeaderOrder];
+    const headers = ["githubUser", "date", "Date(UTC)", ...stringFields, ...numericHeaderOrder];
     const rows = cursorRaw.map((rec) => {
         const row = [];
         row.push(rec.githubUser || "");
+        row.push(rec.date ?? "");
+        const utcStr = rec.date ? new Date(rec.date).toISOString() : "";
+        row.push(utcStr);
         stringFields.forEach((f) => row.push(rec[f] ?? ""));
         numericHeaderOrder.forEach((f) => row.push(rec[f] ?? 0));
         return row.join(",");
@@ -2925,13 +2936,16 @@ exports.buildCsvFromCursorRaw = buildCsvFromCursorRaw;
 /***/ }),
 
 /***/ 61920:
-/***/ ((__unused_webpack_module, exports) => {
+/***/ ((__unused_webpack_module, exports, __nccwpck_require__) => {
 
 "use strict";
 
 Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.buildCsvFromData = void 0;
-const buildCsvFromData = (data, aggregatedCursor, loginEmails = {}) => {
+const date_fns_1 = __nccwpck_require__(73314);
+// backwards compatible overload
+const buildCsvFromData = (data, aggregatedCursor, loginEmails = {}, options = {}) => {
+    const { endDate } = options;
     const baseHeaders = [
         "openedPRs",
         "mergedPRs",
@@ -2981,15 +2995,23 @@ const buildCsvFromData = (data, aggregatedCursor, loginEmails = {}) => {
         });
     });
     const extraHeaders = Array.from(extraHeadersSet);
-    const headers = ["user", "email", ...baseHeaders, ...extraHeaders];
+    const headers = [
+        "user",
+        "email",
+        "Date(UTC)",
+        ...baseHeaders,
+        ...extraHeaders,
+    ];
     const users = Object.keys(data).filter((u) => u !== "total").sort();
     const rows = [];
+    const reportDateUtc = endDate ? (0, date_fns_1.format)(endDate, "yyyy-MM-dd") : "";
     users.forEach((u) => {
         const col = data[u]?.total || {};
         const cursor = aggregatedCursor[u.toLowerCase()] || {};
         const rowVals = [];
         rowVals.push(u);
         rowVals.push(loginEmails[u] || "");
+        rowVals.push(reportDateUtc);
         rowVals.push(col.opened || 0);
         rowVals.push(col.merged || 0);
         rowVals.push(col.reverted || 0);

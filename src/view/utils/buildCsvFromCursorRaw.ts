@@ -20,7 +20,6 @@ export const buildCsvFromCursorRaw = (cursorRaw: any[]): string => {
     "bugbotUsages",
   ];
   const stringFields = [
-    "date",
     "isActive",
     "mostUsedModel",
     "applyMostUsedExtension",
@@ -28,10 +27,13 @@ export const buildCsvFromCursorRaw = (cursorRaw: any[]): string => {
     "clientVersion",
     "email",
   ];
-  const headers = ["githubUser", ...stringFields, ...numericHeaderOrder];
+  const headers = ["githubUser", "date", "Date(UTC)", ...stringFields, ...numericHeaderOrder];
   const rows = cursorRaw.map((rec) => {
     const row: (string | number | boolean)[] = [];
     row.push(rec.githubUser || "");
+    row.push(rec.date ?? "");
+    const utcStr = rec.date ? new Date(rec.date).toISOString() : "";
+    row.push(utcStr);
     stringFields.forEach((f) => row.push(rec[f] ?? ""));
     numericHeaderOrder.forEach((f) => row.push(rec[f] ?? 0));
     return row.join(",");

@@ -1,5 +1,5 @@
 import { commonHeaders } from "./constants";
-import { isAfter, isBefore, parseISO } from "date-fns";
+import { isAfter, isBefore, isEqual, parseISO, addDays } from "date-fns";
 
 import { octokit } from "../octokit";
 import { getReportDates } from "./utils";
@@ -11,6 +11,12 @@ export const getPullRequests = async (
 ) => {
   const { startDate, endDate } = getReportDates();
   const { owner, repo } = repository;
+
+  // If start and end dates are the same day, extend end date by 1 day so that the whole day is included (closed_at is usually later than midnight)
+  const effectiveEndDate =
+    startDate && endDate && isEqual(startDate, endDate)
+      ? addDays(endDate, 1)
+      : endDate;
 
   const data = [];
   for (
@@ -32,21 +38,21 @@ export const getPullRequests = async (
       const filteredPulls = pulls.data.filter((pr) => {
         const closedDate = pr.closed_at ? parseISO(pr.closed_at) : null;
         if (closedDate) {
-          const isBeforeEndDate = endDate
-            ? isBefore(closedDate, endDate)
+          const isBeforeOrEqualEndDate = effectiveEndDate
+            ? isBefore(closedDate, effectiveEndDate) || isEqual(closedDate, effectiveEndDate)
             : true;
-          const isAfterStartDate = startDate
-            ? isAfter(closedDate, startDate)
+          const isAfterOrEqualStartDate = startDate
+            ? isAfter(closedDate, startDate) || isEqual(closedDate, startDate)
             : true;
-          return isBeforeEndDate && isAfterStartDate;
+          return isBeforeOrEqualEndDate && isAfterOrEqualStartDate;
         }
         return false;
       });
-      dateMatched = pulls.data.some((pr) =>
-        startDate && pr.updated_at
-          ? isBefore(startDate, parseISO(pr.updated_at))
-          : null
-      );
+      dateMatched = pulls.data.some((pr) => {
+        if (!startDate || !pr.updated_at) return null;
+        const updatedDate = parseISO(pr.updated_at);
+        return isBefore(startDate, updatedDate) || isEqual(startDate, updatedDate);
+      });
       data.push(...filteredPulls);
     } else {
       data.push(...pulls.data);
