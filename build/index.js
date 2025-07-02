@@ -411,6 +411,7 @@ const calculations_1 = __nccwpck_require__(16576);
 const utils_2 = __nccwpck_require__(41002);
 const collectData = (data, teams) => {
     const collection = { total: {} };
+    const userTypes = {};
     data.pullRequestInfo.forEach((pullRequest, index) => {
         if (pullRequest === undefined || pullRequest === null) {
             return;
@@ -426,6 +427,12 @@ const collectData = (data, teams) => {
             ? (0, date_fns_1.format)(closedDate, (0, utils_2.getDateFormat)())
             : constants_1.invalidDate;
         const userKey = pullRequest.user?.login || constants_1.invalidUserLogin;
+        // store user type mapping
+        if (pullRequest.user?.login && pullRequest.user?.type) {
+            if (!userTypes[pullRequest.user.login]) {
+                userTypes[pullRequest.user.login] = pullRequest.user.type;
+            }
+        }
         (0, utils_1.prepareRequestedReviews)(reviewRequests, collection, dateKey, teams);
         ["total", userKey, ...(teams[userKey] || [])].forEach((key) => {
             ["total", dateKey].forEach((innerKey) => {
@@ -444,6 +451,11 @@ const collectData = (data, teams) => {
             (0, set_1.default)(collection, [key, innerKey], (0, utils_1.preparePullRequestStats)(innerValue));
         });
     });
+    // Store list of team aggregate keys to allow CSV builder to distinguish individuals from teams
+    const teamNamesSet = new Set();
+    Object.values(teams).forEach((teamArr) => teamArr.forEach((t) => teamNamesSet.add(t)));
+    collection.__teamNames = Array.from(teamNamesSet);
+    collection.__userTypes = userTypes;
     return collection;
 };
 exports.collectData = collectData;
@@ -1512,6 +1524,13 @@ Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.preparePullRequestInfo = void 0;
 const calculations_1 = __nccwpck_require__(16576);
 const checkRevert_1 = __nccwpck_require__(37644);
+const isMergedToDefaultBranch = (pr) => {
+    if (!pr?.merged || !pr?.base?.ref)
+        return false;
+    // `base.repo.default_branch` is present in the API response; fall back to "main" if undefined
+    const defaultBranch = pr.base?.repo?.default_branch || "main";
+    return pr.base.ref === defaultBranch;
+};
 const preparePullRequestInfo = (pullRequest, collection) => {
     const previousComments = typeof collection?.comments === "number" ? collection?.comments : 0;
     const comments = previousComments + (pullRequest?.comments || 0);
@@ -1536,6 +1555,12 @@ const preparePullRequestInfo = (pullRequest, collection) => {
             : collection?.reverted || 0,
         additions: (collection?.additions || 0) + (pullRequest?.additions || 0),
         deletions: (collection?.deletions || 0) + (pullRequest?.deletions || 0),
+        // Stats for PRs merged into default branch
+        mergedToDefault: (collection?.mergedToDefault || 0) + (isMergedToDefaultBranch(pullRequest) ? 1 : 0),
+        additionsToDefault: (collection?.additionsToDefault || 0) +
+            (isMergedToDefaultBranch(pullRequest) ? pullRequest?.additions || 0 : 0),
+        deletionsToDefault: (collection?.deletionsToDefault || 0) +
+            (isMergedToDefaultBranch(pullRequest) ? pullRequest?.deletions || 0 : 0),
         prSizes: [
             ...(collection?.prSizes || []),
             (0, calculations_1.getPullRequestSize)(pullRequest?.additions, pullRequest?.deletions),
@@ -2058,9 +2083,11 @@ const createOutput = async (data) => {
                 });
             });
             const loginEmails = data.__loginEmails || {};
-            const { endDate } = (0, utils_3.getReportDates)();
-            const csvCombined = (0, buildCsvFromData_1.buildCsvFromData)(data, aggregatedCursor, loginEmails, { endDate });
-            const csvGithubOnly = (0, buildCsvFromData_1.buildCsvFromData)(data, {}, loginEmails, { endDate });
+            const { startDate, endDate } = (0, utils_3.getReportDates)();
+            const teamNames = data.__teamNames || [];
+            const userTypes = data.__userTypes || {};
+            const csvCombined = (0, buildCsvFromData_1.buildCsvFromData)(data, aggregatedCursor, loginEmails, { startDate, endDate, teamNames, userTypes });
+            const csvGithubOnly = (0, buildCsvFromData_1.buildCsvFromData)(data, {}, loginEmails, { startDate, endDate, teamNames, userTypes });
             const csvCursorOnly = (0, buildCsvFromCursorRaw_1.buildCsvFromCursorRaw)(data.cursorRaw || []);
             const fs = await Promise.resolve(/* import() */).then(__nccwpck_require__.t.bind(__nccwpck_require__, 57147, 23));
             fs.writeFileSync("combined.csv", csvCombined, "utf8");
@@ -2943,9 +2970,25 @@ exports.buildCsvFromCursorRaw = buildCsvFromCursorRaw;
 Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.buildCsvFromData = void 0;
 const date_fns_1 = __nccwpck_require__(73314);
+const utils_1 = __nccwpck_require__(41002);
+const constants_1 = __nccwpck_require__(95354);
 // backwards compatible overload
 const buildCsvFromData = (data, aggregatedCursor, loginEmails = {}, options = {}) => {
-    const { endDate } = options;
+    const { startDate, endDate, teamNames = [], userTypes = {} } = options;
+    // Determine which date key to use for data extraction
+    const isSingleDayReport = startDate && endDate && (0, date_fns_1.isEqual)(startDate, endDate);
+    let dateKey = "total";
+    if (isSingleDayReport) {
+        const dateFormat = (0, utils_1.getDateFormat)();
+        if (dateFormat) {
+            // If there's a date format (months, quarters, years), use the formatted date
+            dateKey = (0, date_fns_1.format)(startDate, dateFormat);
+        }
+        else {
+            // If no date format (single-day reports), data is stored under "invalidDate"
+            dateKey = constants_1.invalidDate;
+        }
+    }
     const baseHeaders = [
         "openedPRs",
         "mergedPRs",
@@ -2954,10 +2997,10 @@ const buildCsvFromData = (data, aggregatedCursor, loginEmails = {}, options = {}
         "unapprovedPRs",
         "additions",
         "deletions",
-        "cursorLinesAdded",
-        "cursorLinesDeleted",
-        "cursorAcceptedLinesAdded",
-        "cursorAcceptedLinesDeleted",
+        "mergedPRs_main",
+        "additions_main",
+        "deletions_main",
+        // cursor columns conditionally added below
         // Timeline (percentile)
         "timeline_timeInDraft",
         "timeline_timeToReviewRequest",
@@ -3002,11 +3045,27 @@ const buildCsvFromData = (data, aggregatedCursor, loginEmails = {}, options = {}
         ...baseHeaders,
         ...extraHeaders,
     ];
-    const users = Object.keys(data).filter((u) => u !== "total").sort();
+    const hasCursorData = Object.keys(aggregatedCursor).length > 0;
+    if (hasCursorData) {
+        baseHeaders.push("cursorLinesAdded", "cursorLinesDeleted", "cursorAcceptedLinesAdded", "cursorAcceptedLinesDeleted");
+    }
+    const users = Object.keys(data)
+        .filter((u) => u !== "total")
+        .filter((u) => !u.startsWith("__") && u !== "cursorRaw")
+        .filter((u) => !teamNames.includes(u))
+        .filter((u) => {
+        const t = userTypes[u];
+        if (t)
+            return t === "User";
+        // Fallback: exclude common bot naming patterns
+        return !/(\[bot\]|-bot|_bot|bot$)/i.test(u);
+    })
+        .sort();
     const rows = [];
     const reportDateUtc = endDate ? (0, date_fns_1.format)(endDate, "yyyy-MM-dd") : "";
     users.forEach((u) => {
-        const col = data[u]?.total || {};
+        // Use specific date key for single-day reports, "total" for multi-day reports
+        const col = data[u]?.[dateKey] || {};
         const cursor = aggregatedCursor[u.toLowerCase()] || {};
         const rowVals = [];
         rowVals.push(u);
@@ -3019,10 +3078,15 @@ const buildCsvFromData = (data, aggregatedCursor, loginEmails = {}, options = {}
         rowVals.push(col.unapproved || 0);
         rowVals.push(col.additions || 0);
         rowVals.push(col.deletions || 0);
-        rowVals.push(col.cursorTotalLinesAdded || 0);
-        rowVals.push(col.cursorTotalLinesDeleted || 0);
-        rowVals.push(col.cursorAcceptedLinesAdded || 0);
-        rowVals.push(col.cursorAcceptedLinesDeleted || 0);
+        rowVals.push(col.mergedToDefault || 0);
+        rowVals.push(col.additionsToDefault || 0);
+        rowVals.push(col.deletionsToDefault || 0);
+        if (hasCursorData) {
+            rowVals.push(col.cursorTotalLinesAdded || 0);
+            rowVals.push(col.cursorTotalLinesDeleted || 0);
+            rowVals.push(col.cursorAcceptedLinesAdded || 0);
+            rowVals.push(col.cursorAcceptedLinesDeleted || 0);
+        }
         // Timeline percentile  (use percentile; fallback to median; minutes)
         rowVals.push(col.percentile?.timeInDraft || col.median?.timeInDraft || 0);
         rowVals.push(col.percentile?.timeToReviewRequest || col.median?.timeToReviewRequest || 0);
@@ -3032,7 +3096,9 @@ const buildCsvFromData = (data, aggregatedCursor, loginEmails = {}, options = {}
         // PR Quality
         rowVals.push(col.discussions?.received?.total || 0);
         rowVals.push(col.reviewComments || 0);
-        rowVals.push(data["total"]?.total?.reviewsConducted?.[u]?.["changes_requested"] ||
+        // For single-day reports, use the specific date key for reviewsConducted lookup
+        const reviewsConductedData = isSingleDayReport ? data["total"]?.[dateKey] : data["total"]?.total;
+        rowVals.push(reviewsConductedData?.reviewsConducted?.[u]?.["changes_requested"] ||
             0);
         // Review engagement
         rowVals.push(col.reviewsConducted?.total?.total || 0);

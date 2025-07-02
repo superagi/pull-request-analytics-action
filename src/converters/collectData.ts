@@ -30,6 +30,7 @@ export const collectData = (
   teams: Record<string, string[]>
 ) => {
   const collection: Record<string, Record<string, Collection>> = { total: {} };
+  const userTypes: Record<string, string> = {};
 
   data.pullRequestInfo.forEach((pullRequest, index) => {
     if (pullRequest === undefined || pullRequest === null) {
@@ -64,6 +65,14 @@ export const collectData = (
         : invalidDate;
 
     const userKey = pullRequest.user?.login || invalidUserLogin;
+
+    // store user type mapping
+    if (pullRequest.user?.login && pullRequest.user?.type) {
+      if (!userTypes[pullRequest.user.login]) {
+        userTypes[pullRequest.user.login] = pullRequest.user.type;
+      }
+    }
+
     prepareRequestedReviews(reviewRequests, collection, dateKey, teams);
 
     ["total", userKey, ...(teams[userKey] || [])].forEach((key) => {
@@ -123,6 +132,12 @@ export const collectData = (
       set(collection, [key, innerKey], preparePullRequestStats(innerValue));
     });
   });
+
+  // Store list of team aggregate keys to allow CSV builder to distinguish individuals from teams
+  const teamNamesSet = new Set<string>();
+  Object.values(teams).forEach((teamArr) => teamArr.forEach((t) => teamNamesSet.add(t)));
+  (collection as any).__teamNames = Array.from(teamNamesSet);
+  (collection as any).__userTypes = userTypes;
 
   return collection;
 };

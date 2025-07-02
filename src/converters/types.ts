@@ -128,4 +128,10 @@ export type Collection = {
   cursorTotalLinesDeleted?: number;
   cursorAcceptedLinesAdded?: number;
   cursorAcceptedLinesDeleted?: number;
+  /** PRs merged into the repository default branch */
+  mergedToDefault?: number;
+  /** Additions counted for PRs merged into default branch */
+  additionsToDefault?: number;
+  /** Deletions counted for PRs merged into default branch */
+  deletionsToDefault?: number;
 };

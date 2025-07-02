@@ -150,9 +150,11 @@ export const createOutput = async (
       });
 
       const loginEmails: Record<string,string> = (data as any).__loginEmails || {};
-      const { endDate } = getReportDates();
-      const csvCombined = buildCsvFromData(data, aggregatedCursor, loginEmails, { endDate });
-      const csvGithubOnly = buildCsvFromData(data, {}, loginEmails, { endDate });
+      const { startDate, endDate } = getReportDates();
+      const teamNames: string[] = (data as any).__teamNames || [];
+      const userTypes: Record<string,string> = (data as any).__userTypes || {};
+      const csvCombined = buildCsvFromData(data, aggregatedCursor, loginEmails, { startDate, endDate, teamNames, userTypes });
+      const csvGithubOnly = buildCsvFromData(data, {}, loginEmails, { startDate, endDate, teamNames, userTypes });
       const csvCursorOnly = buildCsvFromCursorRaw((data as any).cursorRaw || []);
       const fs = await import("fs");
       fs.writeFileSync("combined.csv", csvCombined, "utf8");

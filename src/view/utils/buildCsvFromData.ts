@@ -1,8 +1,13 @@
 import { Collection } from "../../converters/types";
-import { format } from "date-fns";
+import { format, isEqual } from "date-fns";
+import { getDateFormat } from "../../common/utils";
+import { invalidDate } from "../../converters/constants";
 
 type BuildCsvOptions = {
+  startDate?: Date | null;
   endDate?: Date | null;
+  teamNames?: string[];
+  userTypes?: Record<string, string>;
 };
 
 // backwards compatible overload
@@ -12,7 +17,22 @@ export const buildCsvFromData = (
   loginEmails: Record<string, string> = {},
   options: BuildCsvOptions = {}
 ) => {
-  const { endDate } = options;
+  const { startDate, endDate, teamNames = [], userTypes = {} } = options;
+
+  // Determine which date key to use for data extraction
+  const isSingleDayReport = startDate && endDate && isEqual(startDate, endDate);
+  let dateKey = "total";
+  
+  if (isSingleDayReport) {
+    const dateFormat = getDateFormat();
+    if (dateFormat) {
+      // If there's a date format (months, quarters, years), use the formatted date
+      dateKey = format(startDate, dateFormat);
+    } else {
+      // If no date format (single-day reports), data is stored under "invalidDate"
+      dateKey = invalidDate;
+    }
+  }
 
   const baseHeaders = [
     "openedPRs",
@@ -22,10 +42,10 @@ export const buildCsvFromData = (
     "unapprovedPRs",
     "additions",
     "deletions",
-    "cursorLinesAdded",
-    "cursorLinesDeleted",
-    "cursorAcceptedLinesAdded",
-    "cursorAcceptedLinesDeleted",
+    "mergedPRs_main",
+    "additions_main",
+    "deletions_main",
+    // cursor columns conditionally added below
     // Timeline (percentile)
     "timeline_timeInDraft",
     "timeline_timeToReviewRequest",
@@ -75,11 +95,33 @@ export const buildCsvFromData = (
     ...extraHeaders,
   ];
 
-  const users = Object.keys(data).filter((u) => u !== "total").sort();
+  const hasCursorData = Object.keys(aggregatedCursor).length > 0;
+
+  if (hasCursorData) {
+    baseHeaders.push(
+      "cursorLinesAdded",
+      "cursorLinesDeleted",
+      "cursorAcceptedLinesAdded",
+      "cursorAcceptedLinesDeleted"
+    );
+  }
+
+  const users = Object.keys(data)
+    .filter((u) => u !== "total")
+    .filter((u) => !u.startsWith("__") && u !== "cursorRaw")
+    .filter((u) => !teamNames.includes(u))
+    .filter((u) => {
+      const t = userTypes[u];
+      if (t) return t === "User";
+      // Fallback: exclude common bot naming patterns
+      return !/(\[bot\]|-bot|_bot|bot$)/i.test(u);
+    })
+    .sort();
   const rows: string[] = [];
   const reportDateUtc = endDate ? format(endDate, "yyyy-MM-dd") : "";
   users.forEach((u) => {
-    const col = data[u]?.total || ({} as Collection);
+    // Use specific date key for single-day reports, "total" for multi-day reports
+    const col = data[u]?.[dateKey] || ({} as Collection);
     const cursor = aggregatedCursor[u.toLowerCase()] || {};
     const rowVals: (string | number)[] = [];
     rowVals.push(u);
@@ -92,10 +134,16 @@ export const buildCsvFromData = (
     rowVals.push(col.unapproved || 0);
     rowVals.push(col.additions || 0);
     rowVals.push(col.deletions || 0);
-    rowVals.push(col.cursorTotalLinesAdded || 0);
-    rowVals.push(col.cursorTotalLinesDeleted || 0);
-    rowVals.push(col.cursorAcceptedLinesAdded || 0);
-    rowVals.push(col.cursorAcceptedLinesDeleted || 0);
+    rowVals.push(col.mergedToDefault || 0);
+    rowVals.push(col.additionsToDefault || 0);
+    rowVals.push(col.deletionsToDefault || 0);
+
+    if (hasCursorData) {
+      rowVals.push(col.cursorTotalLinesAdded || 0);
+      rowVals.push(col.cursorTotalLinesDeleted || 0);
+      rowVals.push(col.cursorAcceptedLinesAdded || 0);
+      rowVals.push(col.cursorAcceptedLinesDeleted || 0);
+    }
 
     // Timeline percentile  (use percentile; fallback to median; minutes)
     rowVals.push(col.percentile?.timeInDraft || col.median?.timeInDraft || 0);
@@ -109,8 +157,10 @@ export const buildCsvFromData = (
     // PR Quality
     rowVals.push(col.discussions?.received?.total || 0);
     rowVals.push(col.reviewComments || 0);
+    // For single-day reports, use the specific date key for reviewsConducted lookup
+    const reviewsConductedData = isSingleDayReport ? data["total"]?.[dateKey] : data["total"]?.total;
     rowVals.push(
-      (data["total"]?.total?.reviewsConducted?.[u]?.["changes_requested"] as number) ||
+      (reviewsConductedData?.reviewsConducted?.[u]?.["changes_requested"] as number) ||
         0
     );
 
